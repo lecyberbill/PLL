@@ -45,6 +45,31 @@ async function loadMonaco() {
             ],
         },
     });
+    // Define dark theme matching our CSS
+    monaco.editor.defineTheme('pll-dark', {
+        base: 'vs-dark',
+        inherit: true,
+        rules: [
+            { token: 'comment', foreground: '6a9955', fontStyle: 'italic' },
+            { token: 'keyword', foreground: 'c586c0' },
+            { token: 'type', foreground: 'dcdcaa' },
+            { token: 'builtin', foreground: '4fc1ff' },
+            { token: 'string', foreground: 'ce9178' },
+            { token: 'number', foreground: 'b5cea8' },
+            { token: 'operator', foreground: 'd4d4d4' },
+            { token: 'identifier', foreground: '9cdcfe' },
+            { token: 'function', foreground: 'dcdcaa' },
+        ],
+        colors: {
+            'editor.background': '#0f0f1a',
+            'editor.foreground': '#e0e0e0',
+            'editor.lineHighlightBackground': '#1a1a2e',
+            'editor.selectionBackground': '#7c5cfc44',
+            'editorCursor.foreground': '#7c5cfc',
+            'editorLineNumber.foreground': '#555',
+            'editorLineNumber.activeForeground': '#888',
+        },
+    });
     return monaco;
 }
 
