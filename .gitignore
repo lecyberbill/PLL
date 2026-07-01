@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+pll_server.db
+
+# Rust
+target/
+**/*.exe
+**/*.pdb
+
+# WASM
+playground/pkg/pll_wasm_bg.wasm
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

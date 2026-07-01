@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLL Language Playground</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <div class="glass-bg"></div>
+    <div class="app-container">
+        <header class="main-header">
+            <div class="logo">
+                <span class="pulse-dot"></span>
+                <h1>PLL <span class="badge">v2.0 WASM</span></h1>
+            </div>
+            <div class="header-center">
+                <div class="project-bar">
+                    <select id="project-select" class="project-select">
+                        <option value="">-- Projet local --</option>
+                    </select>
+                    <button id="btn-save-project" class="btn btn-sm btn-secondary" title="Sauvegarder">💾</button>
+                    <button id="btn-new-project" class="btn btn-sm btn-secondary" title="Nouveau projet">+</button>
+                    <button id="btn-delete-project" class="btn btn-sm btn-danger" style="display:none">🗑</button>
+                </div>
+            </div>
+        </header>
+        <main class="workspace">
+            <section class="pane editor-pane">
+                <div class="pane-header">
+                    <div class="editor-tabs-bar" id="editor-tabs-bar"></div>
+                    <div class="editor-status" id="typecheck-status">
+                        <span class="status-indicator success"></span> Prêt
+                    </div>
+                </div>
+                <div class="editor-container">
+                    <div id="monaco-editor"></div>
+                </div>
+                <div class="editor-lang-badge" id="editor-lang-badge">python</div>
+            </section>
+            <section class="pane results-pane">
+                <div class="pane-header">
+                    <div class="tabs-list">
+                        <button class="tab-btn active" data-tab="tab-terminal">Console</button>
+                        <button class="tab-btn" data-tab="tab-vfs">Fichiers</button>
+                        <button class="tab-btn" data-tab="tab-gca">GCA</button>
+                        <button class="tab-btn" data-tab="tab-agentic">Agent 🤖</button>
+                        <button class="tab-btn" data-tab="tab-packages">Paquets</button>
+                    </div>
+                </div>
+                <div class="tab-content active" id="tab-terminal">
+                    <div class="terminal-output" id="terminal-log">
+                        <div class="sys-msg">Console PLL prête.</div>
+                    </div>
+                </div>
+                <div class="tab-content" id="tab-vfs">
+                    <div class="vfs-manager">
+                        <div class="vfs-header">
+                            <h3>Fichiers</h3>
+                            <button id="btn-add-file" class="btn btn-sm btn-secondary">+</button>
+                        </div>
+                        <div class="vfs-list" id="vfs-files-list"></div>
+                    </div>
+                </div>
+                <div class="tab-content" id="tab-gca">
+                    <div class="gca-panel">
+                        <h3>GCA</h3>
+                        <div id="gca-status"></div>
+                        <div id="gca-vault"></div>
+                    </div>
+                </div>
+                <div class="tab-content" id="tab-agentic">
+                    <div class="agentic-panel">
+                        <div class="agentic-header">
+                            <h3>Agent 🤖</h3>
+                            <div class="agentic-controls">
+                                <select id="agentic-backend" class="project-select">
+                                    <option value="auto">Auto</option>
+                                    <option value="deepseek">DeepSeek</option>
+                                    <option value="lmstudio">LM Studio</option>
+                                </select>
+                                <button id="btn-agentic-clear" class="btn btn-sm btn-secondary">Effacer</button>
+                            </div>
+                        </div>
+                        <div class="agentic-conversation" id="agentic-conversation">
+                            <div class="sys-msg">Posez une question à l'agent.</div>
+                        </div>
+                        <div class="agentic-input-bar">
+                            <textarea id="agentic-input" rows="2" placeholder="Ex: Crée une fonction fibonacci..."></textarea>
+                            <button id="btn-agentic-send" class="btn btn-primary">Envoyer</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="tab-content" id="tab-packages">
+                    <div class="packages-panel">
+                        <h3>Paquets</h3>
+                        <div id="packages-list"></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+        <div id="git-status-bar">
+            <span id="git-branch">⎇ —</span>
+            <span id="git-changes"></span>
+            <span id="git-remote"></span>
+        </div>
+    </div>
+    <div class="modal" id="vfs-modal">
+        <div class="modal-content">
+            <h2>Nouveau fichier</h2>
+            <input type="text" id="modal-file-path" placeholder="mon_fichier.py">
+            <textarea id="modal-file-content" placeholder="Contenu..."></textarea>
+            <div class="modal-actions">
+                <button id="modal-cancel" class="btn btn-secondary">Annuler</button>
+                <button id="modal-save" class="btn btn-primary">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+    <div class="modal" id="project-modal">
+        <div class="modal-content">
+            <h2 id="project-modal-title">Nouveau Projet</h2>
+            <input type="text" id="modal-project-name" placeholder="Nom">
+            <textarea id="modal-project-desc" placeholder="Description..."></textarea>
+            <input type="text" id="modal-project-path" placeholder="Chemin disque (optionnel)">
+            <div class="modal-actions">
+                <button id="project-modal-cancel" class="btn btn-secondary">Annuler</button>
+                <button id="project-modal-save" class="btn btn-primary">Créer</button>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="index.js"></script>
+</body>
+</html>

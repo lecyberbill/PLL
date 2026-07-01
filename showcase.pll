@@ -1,0 +1,33 @@
+t DateRange [start_date, end_date]
+t TripBooking [destination, dates:DateRange, notes]
+t TaskItem [title, priority:bool, due_date]
+
+v args_list != args()
+v user_prompt != "I need to book a flight to Tokyo from June 5 to June 12"
+if list_length(args_list) > 0:
+    user_prompt = list_get(args_list, 0)
+
+render str_concat("Processing prompt: ", user_prompt)
+
+fork user_prompt:
+    c "travel plan booking destination" (p > 0.65):
+        v booking != user_prompt => TripBooking:
+            v booking.destination != ""
+            v booking.dates.start_date != ""
+            r (temp += 0.1, attempts = 3)
+        
+        db_set("last_activity", booking)
+        render str_concat("Trip structured successfully: Destination to ", str_concat(booking.destination, str_concat(" from ", str_concat(booking.dates.start_date, str_concat(" to ", booking.dates.end_date)))))
+
+    c "schedule task todo list priority" (p > 0.60):
+        v task != user_prompt => TaskItem:
+            v task.title != ""
+            r (temp += 0.2, attempts = 2)
+
+        db_set("last_activity", task)
+        render str_concat("Task added to queue: ", task.title)
+
+    else:
+        v simple_reply != user_prompt => "Respond to the user request or question politely."
+        db_set("last_activity", simple_reply)
+        render str_concat("Response: ", simple_reply)

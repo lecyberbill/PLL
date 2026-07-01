@@ -1,0 +1,89 @@
+# [WFGY] Zone: STRESS | λ: 0.3 | Agent: stress_test
+
+# PLL v2 — Stress Test (codegen-valid subset)
+
+# ── Types ──
+
+t Address [street, city, zip:num, country?]
+
+t Contact [primary:Address, tags:String[]]
+
+t Measurement [name, value:num, unit, confidence:num]
+
+# ── Protocols ──
+
+p SimpleProto:
+    msg Ping []
+    msg Pong []
+    msg Data [payload, seq:num]
+
+p ComplexProto:
+    msg Request [query, timeout:num, tags:String[]]
+    msg Response [results:String[], total:num, confidence:num]
+    msg Error [code:num, message]
+    constraint Request.timeout > 0
+    constraint Request.query != ""
+    constraint Response.total >= 0
+
+# ── Capabilities ──
+
+cap validate_input [input:belief<String>] -> [valid:bool, score:num]
+cap.cost: 0.001
+cap.requires: "validator-v1"
+cap.safety: ["no_pii"]
+
+# ── Contracts ──
+
+contract StrictValidation(raw_input):
+    pre: raw_input != ""
+    post: valid == true
+    invariant: score >= 0
+    invariant: score <= 1
+
+# ── Agent: worker ──
+
+agent "worker" on ComplexProto:
+    state = ?("worker state") @ persistent
+
+    on Request:
+        fork payload.query:
+            c "urgent" (p > 0.8):
+                priority = ?("high priority")
+            c "normal" (p > 0.5):
+                priority = ?("normal priority")
+            else:
+                priority = ?("low priority")
+
+        par:
+            validated = payload.query => "Validate input"
+            enriched = payload.query => "Enrich with context"
+
+        join merged:
+            result = merge(validated, enriched) ~> "Combine" (threshold: 0.7)
+
+        processed = result => Measurement:
+            converge (target: 0.9, patience: 2, max_steps: 5):
+                v processed.name != ""
+                v processed.value > 0
+                r (attempts = 3)
+
+        db_set("last", processed.value)
+        emit Response { results: [processed.name], total: 1, confidence: processed.value }
+
+    on Ping:
+        emit Pong {}
+
+# ── Top-level expressions ──
+
+v x != 42
+v y != x + 1
+v z != (x + y) * 2 - 10 / 2
+v cond != x > 0 and y < 100 or z == 83
+v sim != "hello" ~ "world"
+v items != [1, 2, 3, 4, 5]
+v first != items[0]
+v len != items.length
+v greeting != ?("hello world")
+v empty != ""
+v zero != 0
+v flag != true
