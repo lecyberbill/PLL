@@ -167,15 +167,16 @@ class AgentReAct:
                 self._allowed_dir = None
         return self._allowed_dir
 
-    async def _assert_allowed(self, path_str: str) -> str:
-        """Check path is within project scope, return resolved path or error string."""
+    async def _assert_allowed(self, path_str: str, action: str = "") -> str | None:
+        """Check path is within project scope. Return None if OK, or a permission message."""
         from routes.fs import _resolve
         try:
             fp = _resolve(path_str)
             allowed = await self._project_dir()
             if allowed and not str(fp.resolve()).startswith(str(allowed)):
-                return f"ERROR: Path '{path_str}' is outside the project directory"
-            return str(fp)
+                return (f"__NEED_PERMISSION__: The path '{path_str}' is outside the project "
+                        f"directory ({allowed}). Ask the user: 'Allow writing to {path_str}?'")
+            return None
         except Exception as e:
             return f"ERROR: {e}"
 

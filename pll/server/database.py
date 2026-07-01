@@ -17,7 +17,7 @@ class Base(DeclarativeBase):
 
 async def init_db():
     """Create all tables if they don't exist (idempotent)."""
-    from models import Project, Artifact, AgentSession, GCAVault  # noqa: F401
+    from models import Project, Artifact, AgentSession, GCAVault, Package  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

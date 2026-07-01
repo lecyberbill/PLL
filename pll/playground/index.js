@@ -339,12 +339,9 @@ async function loadProjectFromServer(projectId) {
         }
     }
     await walk(tree);
-    openFiles = [...filesList];
-    if (filesList.length > 0) {
-        activeFile = filesList[0];
-        setEditorContent(get_virtual_file(activeFile));
-        setEditorLanguage(detectLanguage(activeFile));
-    }
+    openFiles = [];  // Don't open files by default — user clicks to open
+    activeFile = null;
+    clearEditor();
     renderTabs();
     renderVfsList();
     logToTerminal(`Projet chargé (${filesList.length} fichiers).`, 'sys-msg');

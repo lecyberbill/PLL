@@ -45,3 +45,15 @@ class GCAVault(Base):
     content = Column(Text, default="")
     tags = Column(String(1024), default="")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class Package(Base):
+    __tablename__ = "packages"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), unique=True, nullable=False)
+    version = Column(String(50), default="0.1.0")
+    description = Column(Text, default="")
+    author = Column(String(255), default="")
+    entry = Column(String(1024), default="lib.pll")
+    downloads = Column(Integer, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
