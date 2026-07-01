@@ -693,6 +693,66 @@ elAgenticClear.addEventListener('click', () => {
 
 elBtnRefreshPackages.addEventListener('click', refreshPackages);
 
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+function switchTab(tabId) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    const tab = document.querySelector(`[data-tab="${tabId}"]`);
+    if (tab) tab.classList.add('active');
+    const content = document.getElementById(tabId);
+    if (content) content.classList.add('active');
+}
+
+// GCA buttons
+document.getElementById('btn-gca-init')?.addEventListener('click', gcaInit);
+document.getElementById('btn-gca-checkpoint')?.addEventListener('click', gcaCheckpoint);
+document.getElementById('btn-gca-handoff')?.addEventListener('click', gcaHandoff);
+
+async function gcaInit() {
+    if (!currentProjectId) { addAgenticMessage('system', 'Créez un projet d\'abord.', 'error-msg'); return; }
+    const objective = prompt("Objectif:", "Développer...");
+    if (!objective) return;
+    try {
+        const result = await api(`/api/gca/init/${currentProjectId}?objective=${encodeURIComponent(objective)}`, { method: 'POST' });
+        gcaSessionId = result.primary_session.id;
+        gcaGeneration = 0;
+        addAgenticMessage('system', `Cycle GCA initié. Primaire #${result.primary_session.id}, Ombre #${result.shadow_session.id}`);
+        await gcaRefreshStatus();
+    } catch (e) { addAgenticMessage('system', `Erreur: ${e.message}`); }
+}
+
+async function gcaCheckpoint() {
+    if (!currentProjectId || !gcaSessionId) return;
+    if (activeFile) set_virtual_file(activeFile, getEditorContent());
+    try {
+        await api('/api/gca/checkpoint', { method: 'POST',
+            body: JSON.stringify({
+                project_id: currentProjectId, session_id: gcaSessionId,
+                key: `cp_gen${gcaGeneration}_${Date.now()}.md`,
+                content: `# Gen ${gcaGeneration}\n\n${getEditorContent()}`,
+                current_state: `Active: ${activeFile}`,
+            }),
+        });
+        addAgenticMessage('system', 'Checkpoint sauvegardé.');
+        await gcaRefreshStatus();
+    } catch (e) { addAgenticMessage('system', `Erreur: ${e.message}`); }
+}
+
+async function gcaHandoff() {
+    if (!currentProjectId) return;
+    try {
+        const result = await api(`/api/gca/next-generation/${currentProjectId}`, { method: 'POST' });
+        gcaGeneration = result.new_primary.generation;
+        gcaSessionId = result.new_primary.id;
+        addAgenticMessage('system', `Handoff → Génération ${gcaGeneration}`);
+        await gcaRefreshStatus();
+    } catch (e) { addAgenticMessage('system', `Erreur: ${e.message}`); }
+}
+
 setInterval(() => { if (currentProjectId) gcaRefreshStatus(); }, 10000);
 setInterval(refreshGitStatus, 15000);
 

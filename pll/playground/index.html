@@ -64,7 +64,14 @@
                 </div>
                 <div class="tab-content" id="tab-gca">
                     <div class="gca-panel">
-                        <h3>GCA</h3>
+                        <div class="gca-header">
+                            <h3>GCA</h3>
+                            <div class="gca-actions">
+                                <button id="btn-gca-init" class="btn btn-sm btn-secondary">Init Cycle</button>
+                                <button id="btn-gca-checkpoint" class="btn btn-sm btn-secondary">Checkpoint</button>
+                                <button id="btn-gca-handoff" class="btn btn-sm btn-secondary">Handoff →</button>
+                            </div>
+                        </div>
                         <div id="gca-status"></div>
                         <div id="gca-vault"></div>
                     </div>
@@ -93,7 +100,10 @@
                 </div>
                 <div class="tab-content" id="tab-packages">
                     <div class="packages-panel">
-                        <h3>Paquets</h3>
+                        <div class="packages-header">
+                            <h3>Paquets</h3>
+                            <button id="btn-refresh-packages" class="btn btn-sm btn-secondary">↻</button>
+                        </div>
                         <div id="packages-list"></div>
                     </div>
                 </div>

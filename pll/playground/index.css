@@ -101,3 +101,9 @@ body { font-family: var(--font-sans); background: var(--bg-primary); color: var(
 #git-changes.changed { color: var(--warning); }
 #git-remote.ahead { color: var(--success); }
 #git-remote.behind { color: var(--error); }
+.gca-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.gca-actions { display: flex; gap: 4px; }
+.gca-panel { padding: 8px; }
+.gca-info { font-size: 13px; line-height: 1.8; }
+.vault-entry { margin-bottom: 8px; padding: 8px; background: rgba(255,255,255,0.03); border-radius: var(--radius-sm); }
+
