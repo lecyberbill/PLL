@@ -143,6 +143,7 @@ class AgentReAct:
         self.max_steps = max_steps
         self.history = []
         self._tool_cache = {}
+        self._allowed_dir = None
 
         from services.agent_brain import AgentBrain
         from services.gca_orchestrator import GCAOrchestrator
@@ -150,6 +151,33 @@ class AgentReAct:
         self._session_factory = async_session
         self._agent_brain_cls = AgentBrain
         self._orch_cls = GCAOrchestrator
+
+    async def _project_dir(self):
+        """Return the allowed directory for this project, or None (use BASE_DIR)."""
+        if self._allowed_dir:
+            return self._allowed_dir
+        from database import async_session
+        from models import Project
+        async with async_session() as db:
+            project = await db.get(Project, self.project_id)
+            if project and project.disk_path:
+                from pathlib import Path
+                self._allowed_dir = Path(project.disk_path).resolve()
+            else:
+                self._allowed_dir = None
+        return self._allowed_dir
+
+    async def _assert_allowed(self, path_str: str) -> str:
+        """Check path is within project scope, return resolved path or error string."""
+        from routes.fs import _resolve
+        try:
+            fp = _resolve(path_str)
+            allowed = await self._project_dir()
+            if allowed and not str(fp.resolve()).startswith(str(allowed)):
+                return f"ERROR: Path '{path_str}' is outside the project directory"
+            return str(fp)
+        except Exception as e:
+            return f"ERROR: {e}"
 
     async def _call_llm(self, system: str, messages: list[dict]) -> str:
         result = await chat_completion(
@@ -178,6 +206,9 @@ class AgentReAct:
         from routes.fs import _resolve
         try:
             fp = _resolve(path)
+            allowed = await self._project_dir()
+            if allowed and not str(fp.resolve()).startswith(str(allowed)):
+                return f"ERROR: Path '{path}' is outside the project directory"
             if not fp.is_file():
                 return f"ERROR: File not found: {path}"
             content = fp.read_text(encoding="utf-8")
@@ -189,7 +220,11 @@ class AgentReAct:
         path = args.get("path", "")
         content = args.get("content", "")
         from routes.fs import _resolve
+        # Scope to project directory if available
+        allowed = await self._project_dir()
         fp = _resolve(path)
+        if allowed and not str(fp.resolve()).startswith(str(allowed)):
+            return f"ERROR: Path '{path}' is outside the project directory"
         fp.parent.mkdir(parents=True, exist_ok=True)
         fp.write_text(content, encoding="utf-8")
         return f"Written {len(content)} bytes to {path}"
@@ -453,12 +488,14 @@ class AgentReAct:
                 binary = str(c.resolve())
                 break
         if not binary:
-            return "ERROR: pll-cli binary not found. Build with: cargo build --release -p pll-cli"
+            return "ERROR: pll-cli binary not found"
+        allowed = await self._project_dir()
+        cwd = str(allowed) if allowed else None
         try:
             with tempfile.NamedTemporaryFile(mode="w", suffix=".pll", delete=False, encoding="utf-8") as f:
                 f.write(code)
                 tmp_path = f.name
-            r = subprocess.run([binary, "run", "--bc", tmp_path], capture_output=True, text=True, timeout=30)
+            r = subprocess.run([binary, "run", "--bc", tmp_path], capture_output=True, text=True, timeout=30, cwd=cwd)
             os.unlink(tmp_path)
             if r.returncode != 0:
                 err = r.stderr.strip()[:500]
@@ -532,11 +569,13 @@ class AgentReAct:
         if not code:
             return "ERROR: No Python code provided"
         import subprocess, tempfile, os
+        allowed = await self._project_dir()
+        cwd = str(allowed) if allowed else None
         try:
             with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
                 f.write(code)
                 tmp_path = f.name
-            r = subprocess.run(["python", tmp_path], capture_output=True, text=True, timeout=15)
+            r = subprocess.run(["python", tmp_path], capture_output=True, text=True, timeout=15, cwd=cwd)
             os.unlink(tmp_path)
             out = r.stdout.strip()
             err = r.stderr.strip()[:500]
@@ -553,8 +592,10 @@ class AgentReAct:
         if not cmd:
             return "ERROR: No command provided"
         import subprocess
+        allowed = await self._project_dir()
+        cwd = str(allowed) if allowed else None
         try:
-            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30, cwd=cwd)
             out = r.stdout.strip()[:3000]
             err = r.stderr.strip()[:500]
             if r.returncode != 0 and not out:
