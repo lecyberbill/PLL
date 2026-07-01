@@ -1,0 +1,11 @@
+[package]
+name = "pll-wasm"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pll-core = { path = "../pll-core" }
+pll-lexer = { path = "../pll-lexer" }
+pll-parser = { path = "../pll-parser" }
+pll-runtime = { path = "../pll-runtime" }
+wasm-bindgen = "0.2"

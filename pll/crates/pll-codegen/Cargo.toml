@@ -1,0 +1,7 @@
+[package]
+name = "pll-codegen"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pll-core = { path = "../pll-core" }

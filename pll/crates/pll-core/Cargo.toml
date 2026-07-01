@@ -1,0 +1,6 @@
+[package]
+name = "pll-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

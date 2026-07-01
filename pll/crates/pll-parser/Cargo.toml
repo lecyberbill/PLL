@@ -1,0 +1,8 @@
+[package]
+name = "pll-parser"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pll-core = { path = "../pll-core" }
+pll-lexer = { path = "../pll-lexer" }
