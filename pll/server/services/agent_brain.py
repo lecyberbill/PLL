@@ -76,19 +76,6 @@ class AgentBrain:
         self.db = db
         self.orch = GCAOrchestrator(db)
 
-    RESUME_KEYWORDS = [
-        "reprend", "reprends", "reprendre", "continue", "revois", "explique",
-        "explain", "que fait", "décrit", "décris", "raconte", "résume",
-        "summarize", "status", "état", "projet", "progrès", "avancement",
-        "idée", "idées", "suggestion", "suggère", "propose", "proposition",
-        "idea", "ideas", "suggest", "suggestion", "explore", "review",
-        "what", "how", "tell me", "show me", "describe", "overview",
-        "concept", "brainstorm", "imagine", "could", "possible",
-        "tu es", "es-tu", "are you", "do you", "can you",
-        "qui", "qu'est", "pourquoi", "comment", "où", "quand",
-        "question", "répond", "answer", "hello", "salut", "bonjour",
-    ]
-
     async def clarify_if_needed(self, message: str, context: str, backend: str = "") -> dict:
         """Check if the request needs clarification. Returns {"needs": False} or {"needs": True, "question": "..."}."""
         prompt = (
@@ -140,33 +127,27 @@ class AgentBrain:
         )
         agent = await self._get_or_create_primary(project_id, user_message)
 
-        # Detect mode: ask LLM (speaks all languages)
-        msg_lower = user_message.lower()
+        # Let the LLM decide: explore/converse or generate code
         resume_mode = False
-        if any(kw in msg_lower for kw in self.RESUME_KEYWORDS):
-            try:
-                examples = (
-                    'EXPLORE: "propose moi une idée", "suggest an idea", "what can I do", '
-                    '"explique le code", "tell me about this project", "que fait ce fichier"\n'
-                    'GENERATE: "crée une API", "add a route", "fix the bug", "ajoute un champ", '
-                    '"write a function", "génère un script", "implement feature"'
-                )
-                confirm = await chat_completion(
-                    messages=[{"role": "user", "content": (
-                        f"Message: {user_message[:200]}\n\n"
-                        f"EXPLORE = user wants ideas, explanations, suggestions, project review\n"
-                        f"GENERATE = user wants to create, edit, fix, modify code\n\n"
-                        f"Examples:\n{examples}\n\n"
-                        f"Reply with exactly one word: EXPLORE or GENERATE"
-                    )}],
-                    system_prompt="Classify the user intent. Reply with exactly one word: EXPLORE or GENERATE.",
-                    temperature=0.05,
-                    backend=backend,
-                )
-                resp = confirm["response"].upper().strip().rstrip(".")
-                resume_mode = resp.startswith("EXPLORE")
-            except Exception:
-                resume_mode = True
+        try:
+            confirm = await chat_completion(
+                messages=[{"role": "user", "content": (
+                    f"Message: {user_message[:200]}\n\n"
+                    f"EXPLORE = user wants ideas, explanations, greetings, conversation, project review\n"
+                    f"GENERATE = user wants to create, edit, fix, modify code\n\n"
+                    f"Examples:\n"
+                    f'  EXPLORE: "propose moi une idée", "what can I do", "hello", "tu es opérationnel", "explain the code"\n'
+                    f'  GENERATE: "crée une API", "add a route", "fix the bug", "write a function"\n\n'
+                    f"Reply with exactly one word: EXPLORE or GENERATE"
+                )}],
+                system_prompt="Classify the user intent. Reply with exactly one word: EXPLORE or GENERATE.",
+                temperature=0.05,
+                backend=backend,
+            )
+            resp = confirm["response"].upper().strip().rstrip(".")
+            resume_mode = resp.startswith("EXPLORE")
+        except Exception:
+            resume_mode = True  # fallback: assume conversation on error
 
         if not target_file and not resume_mode:
             target_file = self._detect_target(user_message, agent, context["files"])
