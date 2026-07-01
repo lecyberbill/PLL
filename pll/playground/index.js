@@ -38,6 +38,7 @@ const elProjectModalSave = document.getElementById('project-modal-save');
 const elEditorContainer = document.getElementById('monaco-editor');
 const elEditorTabsBar = document.getElementById('editor-tabs-bar');
 const elLangBadge = document.getElementById('editor-lang-badge');
+const elResizeHandle = document.getElementById('resize-handle');
 const elAgenticInput = document.getElementById('agentic-input');
 const elAgenticSend = document.getElementById('btn-agentic-send');
 const elAgenticClear = document.getElementById('btn-agentic-clear');
@@ -705,6 +706,36 @@ function switchTab(tabId) {
     if (tab) tab.classList.add('active');
     const content = document.getElementById(tabId);
     if (content) content.classList.add('active');
+}
+
+// Resize handle for editor/results panes
+if (elResizeHandle) {
+    let isDragging = false;
+    elResizeHandle.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        elResizeHandle.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const resultsPane = document.querySelector('.results-pane');
+        const editorPane = document.querySelector('.editor-pane');
+        const totalW = editorPane.offsetWidth + resultsPane.offsetWidth + elResizeHandle.offsetWidth;
+        let resultsW = totalW - e.clientX;
+        resultsW = Math.max(250, Math.min(totalW - 250, resultsW));
+        resultsPane.style.width = resultsW + 'px';
+        resultsPane.style.flex = 'none';
+        editorPane.style.flex = '1';
+    });
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            elResizeHandle.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
 }
 
 // GCA buttons

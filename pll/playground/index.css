@@ -36,8 +36,10 @@ body { font-family: var(--font-sans); background: var(--bg-primary); color: var(
 .project-select { background: rgba(0,0,0,0.3); color: var(--text-primary); border: 1px solid var(--border-color); padding: 6px 12px; border-radius: var(--radius-md); font-size: 13px; }
 
 .workspace { display: flex; flex: 1; overflow: hidden; }
+.resize-handle { width: 4px; cursor: col-resize; background: transparent; flex-shrink: 0; transition: background 0.15s; z-index: 10; }
+.resize-handle:hover, .resize-handle.dragging { background: var(--accent); }
 .pane { display: flex; flex-direction: column; }
-.editor-pane { flex: 1; min-width: 0; }
+.editor-pane { flex: 1; min-width: 0; position: relative; }
 .results-pane { width: 400px; min-width: 300px; border-left: 1px solid var(--border-color); }
 
 .pane-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); flex-shrink: 0; gap: 8px; }
@@ -45,7 +47,7 @@ body { font-family: var(--font-sans); background: var(--bg-primary); color: var(
 .tab-btn { background: none; border: none; color: var(--text-muted); padding: 6px 12px; font-size: 12px; cursor: pointer; border-bottom: 2px solid transparent; }
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-.editor-container { flex: 1; overflow: hidden; }
+.editor-container { flex: 1; overflow: hidden; min-height: 0; }
 .editor-lang-badge { position: absolute; bottom: 8px; right: 8px; background: var(--bg-card); padding: 2px 8px; border-radius: var(--radius-sm); font-size: 11px; color: var(--text-muted); }
 
 .editor-tabs-bar { display: flex; align-items: center; gap: 2px; flex: 1; overflow: hidden; }
