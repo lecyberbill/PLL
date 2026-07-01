@@ -84,6 +84,9 @@ class AgentBrain:
         "idea", "ideas", "suggest", "suggestion", "explore", "review",
         "what", "how", "tell me", "show me", "describe", "overview",
         "concept", "brainstorm", "imagine", "could", "possible",
+        "tu es", "es-tu", "are you", "do you", "can you",
+        "qui", "qu'est", "pourquoi", "comment", "où", "quand",
+        "question", "répond", "answer", "hello", "salut", "bonjour",
     ]
 
     async def clarify_if_needed(self, message: str, context: str, backend: str = "") -> dict:
