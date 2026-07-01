@@ -47,7 +47,8 @@ body { font-family: var(--font-sans); background: var(--bg-primary); color: var(
 .tab-btn { background: none; border: none; color: var(--text-muted); padding: 6px 12px; font-size: 12px; cursor: pointer; border-bottom: 2px solid transparent; }
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-.editor-container { flex: 1; overflow: hidden; min-height: 0; }
+.editor-container { flex: 1; overflow: hidden; min-height: 0; position: relative; }
+#monaco-editor { position: absolute; inset: 0; }
 .editor-lang-badge { position: absolute; bottom: 8px; right: 8px; background: var(--bg-card); padding: 2px 8px; border-radius: var(--radius-sm); font-size: 11px; color: var(--text-muted); }
 
 .editor-tabs-bar { display: flex; align-items: center; gap: 2px; flex: 1; overflow: hidden; }
