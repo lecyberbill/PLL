@@ -159,8 +159,11 @@ impl Parser {
     fn parse_for_each(&mut self) -> Result<Spanned<Stmt>, ParseError> {
         let span = self.peek_span().clone();
         self.advance();
-        let var = if let Token::Ident(n) = &self.peek() { let n = n.clone(); self.advance(); n }
-        else { return Err(ParseError { message: "Expected variable name".into(), span: Some(self.peek_span().clone()) }); };
+        let var = match self.peek() {
+            Token::Ident(n) => { let n = n.clone(); self.advance(); n }
+            Token::V => { self.advance(); "v".to_string() }
+            _ => return Err(ParseError { message: "Expected variable name".into(), span: Some(self.peek_span().clone()) }),
+        };
         self.expect(&Token::In, "Expected 'in'")?;
         let iter = self.parse_expr(0)?;
         self.expect(&Token::Colon, "Expected ':'")?;
@@ -335,6 +338,10 @@ impl Parser {
                 } else {
                     Ok(Spanned { value: Expr::Ident(name), span })
                 }
+            }
+            Token::V => {
+                self.advance();
+                Ok(Spanned { value: Expr::Ident("v".to_string()), span })
             }
             Token::LBracket => {
                 self.advance();

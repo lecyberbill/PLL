@@ -110,6 +110,44 @@ impl Compiler {
                 let jif_off = (after as i16 - jif_pos as i16 - 3) as i16;
                 self.bytecode[jif_pos + 1..jif_pos + 3].copy_from_slice(&jif_off.to_le_bytes());
             }
+            Stmt::ForEach(fe) => {
+                // foreach var in list: body
+                // compile as: store list, idx=0, while idx < len(list): var = list[idx], body, idx++
+                let list_var = "__fe_list";
+                let idx_var = "__fe_idx";
+                self.compile_expr(&fe.iter);
+                self.emit_store_var(list_var);
+                self.vars.insert(list_var.to_string(), 0);
+                self.bytecode.extend_from_slice(&[Opcode::PushNum as u8]); // PushNum
+                self.bytecode.extend_from_slice(&0.0f64.to_le_bytes()); // f64(0)
+                self.emit_store_var(idx_var);
+                self.vars.insert(idx_var.to_string(), 0);
+                let loop_start = self.bytecode.len();
+                self.emit_load_var(idx_var);
+                self.emit_load_var(list_var);
+                self.bytecode.extend_from_slice(&[Opcode::Builtin as u8, BUILTIN_LIST_LENGTH]);
+                self.bytecode.push(Opcode::Lt as u8);
+                let jif_pos = self.bytecode.len();
+                self.bytecode.push(Opcode::Jif as u8);
+                self.bytecode.extend_from_slice(&[0; 2]);
+                self.emit_load_var(list_var);
+                self.emit_load_var(idx_var);
+                self.bytecode.extend_from_slice(&[Opcode::Builtin as u8, BUILTIN_LIST_GET]);
+                self.emit_store_var(&fe.var);
+                self.vars.insert(fe.var.clone(), 0);
+                for s in &fe.body { self.compile_stmt(s); }
+                self.emit_load_var(idx_var);
+                self.bytecode.extend_from_slice(&[Opcode::PushNum as u8]); // PushNum
+                self.bytecode.extend_from_slice(&1.0f64.to_le_bytes()); // f64(1)
+                self.bytecode.push(Opcode::Add as u8);
+                self.emit_store_var(idx_var);
+                let jmp_off = (loop_start as i16 - self.bytecode.len() as i16 - 3) as i16;
+                self.bytecode.push(Opcode::Jmp as u8);
+                self.bytecode.extend_from_slice(&jmp_off.to_le_bytes());
+                let after = self.bytecode.len();
+                let jif_off = (after as i16 - jif_pos as i16 - 3) as i16;
+                self.bytecode[jif_pos + 1..jif_pos + 3].copy_from_slice(&jif_off.to_le_bytes());
+            }
             _ => {}
         }
     }
@@ -179,6 +217,7 @@ impl Compiler {
                 self.bytecode.push(Opcode::RecordNew as u8);
                 for (k, v) in fields { self.compile_expr(v); self.emit_push_str(k); self.bytecode.push(Opcode::RecordSet as u8); }
             }
+            Expr::Index(obj, idx) => { self.compile_expr(obj); self.compile_expr(idx); self.bytecode.extend_from_slice(&[Opcode::Builtin as u8, BUILTIN_LIST_GET]); }
             Expr::Member(obj, field) => { self.compile_expr(obj); self.emit_push_str(field); self.bytecode.push(Opcode::Field as u8); }
             Expr::Unary(op, expr) => {
                 self.compile_expr(expr);
