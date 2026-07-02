@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 pll_server.db
 
+# Generated files
+pll/server/projects/
+
 # Rust
 target/
 **/*.exe
