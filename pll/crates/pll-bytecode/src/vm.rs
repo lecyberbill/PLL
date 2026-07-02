@@ -5,6 +5,7 @@ use crate::opcodes::*;
 pub const BUILTIN_EMIT: u8 = 1;
 pub const BUILTIN_RENDER: u8 = 2;
 pub const BUILTIN_DB_SET: u8 = 3;
+#[allow(dead_code)]
 pub const BUILTIN_VERIFY: u8 = 4;
 pub const BUILTIN_DB_GET: u8 = 5;
 pub const BUILTIN_PRINT: u8 = 6;
@@ -19,8 +20,11 @@ pub const BUILTIN_STR_TO_UPPER: u8 = 18;
 pub const BUILTIN_LIST_LENGTH: u8 = 20;
 pub const BUILTIN_LIST_GET: u8 = 21;
 pub const BUILTIN_LIST_PUSH: u8 = 22;
+#[allow(dead_code)]
 pub const BUILTIN_NOT: u8 = 28;
+#[allow(dead_code)]
 pub const BUILTIN_LIST_IN: u8 = 30;
+#[allow(dead_code)]
 pub const BUILTIN_SEMANTIC_INVERT: u8 = 31;
 pub const BUILTIN_ARGS: u8 = 40;
 pub const BUILTIN_READ_FILE: u8 = 41;
@@ -60,6 +64,7 @@ impl BcValue {
 #[derive(Clone)]
 pub struct FnInfo {
     pub name: String,
+    #[allow(dead_code)]
     pub params: Vec<String>,
     pub address: usize,
 }
@@ -85,7 +90,7 @@ impl BcEnv {
     fn err(&self, msg: &str) -> String {
         let mut trace = format!("Runtime error: {}\n", msg);
         trace.push_str(&format!("  at bytecode offset {}\n", self.ip));
-        for (i, (addr, name, _)) in self.call_stack.iter().enumerate().rev() {
+        for (_i, (addr, name, _)) in self.call_stack.iter().enumerate().rev() {
             trace.push_str(&format!("  called from {} at offset {}\n", name, addr));
         }
         trace
@@ -154,7 +159,7 @@ impl BcEnv {
                 }
                 Some(Opcode::Ret) => {
                     let ret_val = self.pop();
-                    if let Some((ip, name, saved)) = self.call_stack.pop() {
+                    if let Some((ip, _name, saved)) = self.call_stack.pop() {
                         self.vars = saved;
                         self.ip = ip;
                         self.push(ret_val);

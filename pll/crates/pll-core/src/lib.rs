@@ -1,4 +1,3 @@
-use std::fmt;
 
 pub type SpanId = u32;
 

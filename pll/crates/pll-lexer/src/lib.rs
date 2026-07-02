@@ -2,9 +2,9 @@ use pll_core::*;
 
 pub struct Lexer {
     chars: Vec<char>,
-    pos: usize,
-    line: usize,
-    col: usize,
+    _pos: usize,
+    _line: usize,
+    _col: usize,
 }
 
 #[derive(Debug)]
@@ -15,7 +15,7 @@ pub struct LexError {
 
 impl Lexer {
     pub fn new(source: &str) -> Self {
-        Self { chars: source.chars().collect(), pos: 0, line: 1, col: 1 }
+        Self { chars: source.chars().collect(), _pos: 0, _line: 1, _col: 1 }
     }
 
     pub fn tokenize(&self) -> Result<Vec<Spanned<Token>>, LexError> {
@@ -87,7 +87,7 @@ impl Lexer {
                     pos += 1; col += 1;
                     let start = pos;
                     while pos < len && chars[pos] != '`' { pos += 1; col += 1; }
-                    let s: String = chars[start..pos].iter().collect();
+                    let _s: String = chars[start..pos].iter().collect();
                     pos += 1; col += 1;
                     Token::MetaStart
                 }
@@ -104,9 +104,9 @@ impl Lexer {
                 }
                 _ if chars[pos].is_ascii_digit() || (chars[pos] == '.' && pos + 1 < len && chars[pos + 1].is_ascii_digit()) => {
                     let start = pos;
-                    let mut is_float = false;
+                    let mut _is_float = false;
                     while pos < len && (chars[pos].is_ascii_digit() || chars[pos] == '.') {
-                        if chars[pos] == '.' { is_float = true; }
+                        if chars[pos] == '.' { _is_float = true; }
                         pos += 1; col += 1;
                     }
                     let s: String = chars[start..pos].iter().collect();
@@ -165,3 +165,4 @@ impl std::fmt::Display for LexError {
         write!(f, "{}", self.message)
     }
 }
+

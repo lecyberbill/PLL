@@ -1,15 +1,12 @@
 use std::sync::{LazyLock, Mutex};
-use std::collections::HashMap;
 use std::io::Write;
 
 static LAST_RENDER: Mutex<Option<String>> = Mutex::new(None);
-static LAST_PRINT: Mutex<Vec<String>> = Mutex::new(Vec::new());
 pub static WASM_LOGS: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| Mutex::new(Vec::new()));
-static DB: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 static ARGS: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 
 thread_local! {
-    static TRANSPORT: std::cell::RefCell<Option<Box<dyn std::any::Any + Send>>> = { std::cell::RefCell::new(None) };
+    static TRANSPORT: std::cell::RefCell<Option<Box<dyn std::any::Any + Send>>> = std::cell::RefCell::new(None) ;
 }
 
 pub fn set_args(args: Vec<String>) {

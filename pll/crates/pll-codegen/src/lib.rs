@@ -1,5 +1,4 @@
 use pll_core::*;
-use std::collections::HashMap;
 
 pub struct Codegen {
     module: String,

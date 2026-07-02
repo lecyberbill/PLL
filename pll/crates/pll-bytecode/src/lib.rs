@@ -4,8 +4,28 @@ mod vm;
 mod fmt;
 
 pub use opcodes::*;
-pub use compiler::*;
-pub use vm::*;
+pub use compiler::Compiler;
+pub use compiler::FnInfo;
+pub use vm::BcEnv;
+pub use vm::BcValue;
+pub use vm::BUILTIN_RENDER;
+pub use vm::BUILTIN_PRINT;
+pub use vm::BUILTIN_EMIT;
+pub use vm::BUILTIN_STR_CONCAT;
+pub use vm::BUILTIN_STR_LENGTH;
+pub use vm::BUILTIN_STR_SLICE;
+pub use vm::BUILTIN_STR_CHAR_AT;
+pub use vm::BUILTIN_STR_TO_NUM;
+pub use vm::BUILTIN_STR_FROM_NUM;
+pub use vm::BUILTIN_STR_STARTS_WITH;
+pub use vm::BUILTIN_STR_TO_UPPER;
+pub use vm::BUILTIN_LIST_LENGTH;
+pub use vm::BUILTIN_LIST_GET;
+pub use vm::BUILTIN_LIST_PUSH;
+pub use vm::BUILTIN_READ_FILE;
+pub use vm::BUILTIN_WRITE_FILE;
+pub use vm::BUILTIN_DB_SET;
+pub use vm::BUILTIN_DB_GET;
 pub use fmt::*;
 
 #[cfg(test)]

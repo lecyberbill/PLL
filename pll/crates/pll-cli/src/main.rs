@@ -1,9 +1,6 @@
-mod bootstrap;
-
 use std::fs;
 use std::path::Path;
-use std::process::{Command, ExitCode};
-use bootstrap::BootstrapGen;
+use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -13,29 +10,29 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     let command = &args[1];
-    let file = args.get(2).map(|s| s.as_str()).unwrap_or("");
+    let _file = args.get(2).map(|s| s.as_str()).unwrap_or("");
     match command.as_str() {
-        "check" => cmd_check(file),
+        "check" => cmd_check(_file),
         "run" => {
             if args.get(2).map(|s| s.as_str()) == Some("--bc") {
                 cmd_run_bc(args.get(3).map(|s| s.as_str()).unwrap_or(""), args.get(4..).unwrap_or(&[]))
             } else {
-                cmd_run(file, args.get(3..).unwrap_or(&[]))
+                cmd_run(_file, args.get(3..).unwrap_or(&[]))
             }
         }
         "compile" => {
             if args.get(2).map(|s| s.as_str()) == Some("--bc") {
                 cmd_compile_bc(args.get(3).map(|s| s.as_str()).unwrap_or(""))
             } else {
-                cmd_compile(file)
+                cmd_compile(_file)
             }
         }
-        "tokens" => cmd_tokens(file),
-        "ast" => cmd_ast(file),
-        "codegen" => cmd_codegen(file),
+        "tokens" => cmd_tokens(_file),
+        "ast" => cmd_ast(_file),
+        "codegen" => cmd_codegen(_file),
         "multi-run" => cmd_multi_run(&args),
-        "install" => cmd_install(file),
-        "selfhost-compile" => cmd_selfhost_compile(file),
+        "install" => cmd_install(_file),
+        "selfhost-compile" => cmd_selfhost_compile(_file),
         "repl" => cmd_repl(),
         _ => { eprintln!("Unknown command"); ExitCode::FAILURE }
     }
@@ -194,12 +191,12 @@ fn cmd_repl() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn cmd_selfhost_compile(file: &str) -> ExitCode {
+fn cmd_selfhost_compile(_file: &str) -> ExitCode {
     eprintln!("selfhost-compile: use cargo build --release -p pll-cli instead");
     ExitCode::FAILURE
 }
 
-fn cmd_multi_run(args: &[String]) -> ExitCode {
+fn cmd_multi_run(_args: &[String]) -> ExitCode {
     eprintln!("multi-run: build with cargo build --release -p pll-cli and run the resulting binary");
     ExitCode::FAILURE
 }

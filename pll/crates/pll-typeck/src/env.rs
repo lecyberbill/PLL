@@ -78,8 +78,8 @@ impl TypeEnv {
                 Ok(self.vars.get(name).cloned().unwrap_or(TypeRef::Any))
             }
             Expr::Binary(op, left, right) => {
-                let lt = self.check_expr(left)?;
-                let rt = self.check_expr(right)?;
+                let _lt = self.check_expr(left)?;
+                let _rt = self.check_expr(right)?;
                 match op {
                     BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => Ok(TypeRef::Num),
                     _ => Ok(TypeRef::Bool),

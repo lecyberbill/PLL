@@ -374,7 +374,7 @@ impl Parser {
             }
             Token::MetaStart => {
                 self.advance();
-                let expr = self.parse_expr(0)?;
+                let _expr = self.parse_expr(0)?;
                 Ok(Spanned { value: Expr::MetaString("".into()), span })
             }
             Token::Star => { self.advance(); let expr = self.parse_primary()?;
@@ -389,7 +389,7 @@ impl Parser {
         // In if/else blocks: Return/Render are top-level (stop after one nested statement)
         // In fn/while/foreach/program: only structural tokens are top-level
         let is_if_body = ctx == "if" || ctx == "else";
-        let is_program = ctx == "program";
+        let _is_program = ctx == "program";
         let top_level = |t: &Token| {
             if is_if_body {
                 matches!(t, Token::End | Token::Fn | Token::T | Token::V | Token::P | Token::Agent | Token::Cap | Token::Contract | Token::Import | Token::Else | Token::Return)
