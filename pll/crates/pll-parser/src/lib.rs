@@ -383,10 +383,25 @@ impl Parser {
         }
     }
 
-    fn parse_block(&mut self, _ctx: &str) -> Result<Vec<Spanned<Stmt>>, ParseError> {
+    fn parse_block(&mut self, ctx: &str) -> Result<Vec<Spanned<Stmt>>, ParseError> {
         let mut stmts = Vec::new();
         self.skip_newlines();
-        let top_level = |t: &Token| matches!(t, Token::End | Token::Fn | Token::T | Token::V | Token::P | Token::Agent | Token::Cap | Token::Contract | Token::Import | Token::Else);
+        // In if/else blocks: Return/Render are top-level (stop after one nested statement)
+        // In fn/while/foreach/program: only structural tokens are top-level
+        let is_if_body = ctx == "if" || ctx == "else";
+        let is_program = ctx == "program";
+        let top_level = |t: &Token| {
+            if is_if_body {
+                matches!(t, Token::End | Token::Fn | Token::T | Token::V | Token::P | Token::Agent | Token::Cap | Token::Contract | Token::Import | Token::Else | Token::Return)
+            } else {
+                // Fn/While/ForEach body: stop only at structural tokens
+                matches!(t, Token::End | Token::Fn | Token::T | Token::V | Token::P | Token::Agent | Token::Cap | Token::Contract | Token::Import | Token::Else)
+            }
+        };
+        // If/else body: first statement is not top-level (it starts with if/else keywords)
+        // Always read at least one statement, then check for top-level
+        stmts.push(self.parse_stmt()?);
+        self.skip_newlines();
         while !top_level(self.peek()) {
             stmts.push(self.parse_stmt()?);
             self.skip_newlines();
