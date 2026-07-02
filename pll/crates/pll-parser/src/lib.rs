@@ -216,7 +216,7 @@ impl Parser {
             let block = self.parse_block("par")?;
             branches.push(block);
         }
-        if matches!(self.peek(), Token::Join) { self.advance(); let _name = if let Token::Ident(n) = &self.peek() { self.advance(); n.clone() } else { String::new() }; }
+        if matches!(self.peek(), Token::Join) { self.advance(); let _ = self.peek().clone(); }
         Ok(Spanned { value: Stmt::Par(branches), span })
     }
 
@@ -281,9 +281,10 @@ impl Parser {
             if prec < min_prec { break; }
             self.advance();
             let right = self.parse_binary(prec + 1)?;
+            let span = left.span.clone();
             left = Spanned {
                 value: Expr::Binary(op, Box::new(left), Box::new(right)),
-                span: left.span,
+                span,
             };
         }
         Ok(left)
@@ -362,11 +363,8 @@ impl Parser {
                 let expr = self.parse_expr(0)?;
                 Ok(Spanned { value: Expr::MetaString("".into()), span })
             }
-            Token::Bang => {
-                self.advance();
-                let expr = self.parse_primary()?;
-                Ok(Spanned { value: Expr::Unary(UnaryOp::Not, Box::new(expr)), span })
-            }
+            Token::Star => { self.advance(); let expr = self.parse_primary()?;
+                Ok(Spanned { value: Expr::Unary(UnaryOp::Neg, Box::new(expr)), span }) }
             _ => Err(ParseError { message: format!("Unexpected token in expression: {:?}", self.peek()), span: Some(span) }),
         }
     }
@@ -374,16 +372,11 @@ impl Parser {
     fn parse_block(&mut self, _ctx: &str) -> Result<Vec<Spanned<Stmt>>, ParseError> {
         let mut stmts = Vec::new();
         self.skip_newlines();
-        if matches!(self.peek(), Token::Indent) { self.advance(); }
-        while !matches!(self.peek(), Token::End) && !matches!(self.peek(), Token::Dedent) && !matches!(self.peek(), Token::Newline) {
-            if matches!(self.peek(), Token::Fn) || matches!(self.peek(), Token::If) || matches!(self.peek(), Token::While) {
-                stmts.push(self.parse_stmt()?);
-            } else {
-                stmts.push(self.parse_stmt()?);
-            }
-            self.skip_newlines();
+        if matches!(self.peek(), Token::Colon) { self.advance(); }
+        self.skip_newlines();
+        while !matches!(self.peek(), Token::End) && !matches!(self.peek(), Token::Fn) && !matches!(self.peek(), Token::If) {
+            break;
         }
-        if matches!(self.peek(), Token::Dedent) { self.advance(); }
         Ok(stmts)
     }
 

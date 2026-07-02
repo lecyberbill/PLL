@@ -40,6 +40,12 @@ impl Compiler {
         for f in &fn_decls {
             let addr = self.bytecode.len();
             fn_addrs.push(addr);
+            // Register function in fn table for Call resolution
+            self.fns.push(FnInfo {
+                name: f.name.clone(),
+                params: f.params.iter().map(|p| p.name.clone()).collect(),
+                address: addr,
+            });
             self.vars.clear();
             for p in &f.params {
                 let var_idx = self.vars.len() as u16;
@@ -161,6 +167,26 @@ impl Compiler {
             Expr::List(items) => {
                 self.bytecode.push(Opcode::ListNew as u8);
                 for i in items { self.compile_expr(i); self.bytecode.push(Opcode::ListPush as u8); }
+            }
+            Expr::Record(_, fields) => {
+                self.bytecode.push(Opcode::RecordNew as u8);
+                for (k, v) in fields {
+                    self.compile_expr(v);
+                    self.emit_push_str(k);
+                    self.bytecode.push(Opcode::RecordSet as u8);
+                }
+            }
+            Expr::Member(obj, field) => {
+                self.compile_expr(obj);
+                self.emit_push_str(field);
+                self.bytecode.push(Opcode::Field as u8);
+            }
+            Expr::Unary(op, expr) => {
+                self.compile_expr(expr);
+                match op {
+                    UnaryOp::Not => self.bytecode.push(Opcode::Not as u8),
+                    UnaryOp::Neg => { self.bytecode.push(Opcode::PushNum as u8); self.bytecode.extend_from_slice(&(-1.0f64).to_le_bytes()); self.bytecode.push(Opcode::Mul as u8); }
+                }
             }
             _ => { self.bytecode.push(Opcode::PushNil as u8); }
         }

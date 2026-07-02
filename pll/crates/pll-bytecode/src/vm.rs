@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use crate::opcodes::*;
 
-fn decode_str(code: &[u8], ip: &mut usize) -> &str {
+fn decode_str<'a>(code: &'a [u8], ip: &mut usize) -> &'a str {
     let len = code[*ip] as usize;
     *ip += 1;
     let s = std::str::from_utf8(&code[*ip..*ip + len]).unwrap_or("");
@@ -108,6 +108,7 @@ impl BcEnv {
             let opcode = self.code[self.ip];
             self.ip += 1;
             match Opcode::from_repr(opcode) {
+                Some(Opcode::Nop) => {}
                 Some(Opcode::PushNum) => {
                     let bytes: [u8; 8] = [self.code[self.ip], self.code[self.ip + 1], self.code[self.ip + 2], self.code[self.ip + 3],
                                            self.code[self.ip + 4], self.code[self.ip + 5], self.code[self.ip + 6], self.code[self.ip + 7]];
@@ -128,11 +129,14 @@ impl BcEnv {
                 Some(Opcode::Mul) => { let b = self.pop().as_num().unwrap_or(0.0); let a = self.pop().as_num().unwrap_or(0.0); self.push(BcValue::Num(a * b)); }
                 Some(Opcode::Div) => { let b = self.pop().as_num().unwrap_or(0.0); let a = self.pop().as_num().unwrap_or(0.0); self.push(BcValue::Num(a / b)); }
                 Some(Opcode::Eq) => { let b = self.pop(); let a = self.pop(); self.push(BcValue::Bool(a.to_string() == b.to_string())); }
+                Some(Opcode::Neq) => { let b = self.pop(); let a = self.pop(); self.push(BcValue::Bool(a.to_string() != b.to_string())); }
                 Some(Opcode::Gt) => { let b = self.pop().as_num().unwrap_or(0.0); let a = self.pop().as_num().unwrap_or(0.0); self.push(BcValue::Bool(a > b)); }
                 Some(Opcode::Lt) => { let b = self.pop().as_num().unwrap_or(0.0); let a = self.pop().as_num().unwrap_or(0.0); self.push(BcValue::Bool(a < b)); }
                 Some(Opcode::Gte) => { let b = self.pop().as_num().unwrap_or(0.0); let a = self.pop().as_num().unwrap_or(0.0); self.push(BcValue::Bool(a >= b)); }
                 Some(Opcode::Lte) => { let b = self.pop().as_num().unwrap_or(0.0); let a = self.pop().as_num().unwrap_or(0.0); self.push(BcValue::Bool(a <= b)); }
                 Some(Opcode::Not) => { let v = self.pop().truthy(); self.push(BcValue::Bool(!v)); }
+                Some(Opcode::And) => { let b = self.pop().truthy(); let a = self.pop().truthy(); self.push(BcValue::Bool(a && b)); }
+                Some(Opcode::Or) => { let b = self.pop().truthy(); let a = self.pop().truthy(); self.push(BcValue::Bool(a || b)); }
                 Some(Opcode::LoadVar) => {
                     let name = decode_str(&self.code, &mut self.ip).to_string();
                     let val = self.vars.get(&name).cloned().unwrap_or(BcValue::Nil);
@@ -203,6 +207,22 @@ impl BcEnv {
                 Some(Opcode::ListLen) => {
                     let len = if let BcValue::List(items) = self.pop() { items.len() as f64 } else { 0.0 };
                     self.push(BcValue::Num(len));
+                }
+                Some(Opcode::RecordNew) => {
+                    self.push(BcValue::Record(Arc::new(std::collections::HashMap::new())));
+                }
+                Some(Opcode::RecordSet) => {
+                    let val = self.pop();
+                    let key = self.pop().to_string();
+                    if let BcValue::Record(ref mut map) = self.stack.last_mut().unwrap() {
+                        Arc::make_mut(map).insert(key, val);
+                    }
+                }
+                Some(Opcode::Field) => {
+                    let field = self.pop().to_string();
+                    if let BcValue::Record(map) = self.pop() {
+                        self.push(map.get(&field).cloned().unwrap_or(BcValue::Nil));
+                    } else { self.push(BcValue::Nil); }
                 }
                 Some(Opcode::FnTable) => {} // Already parsed at start
                 Some(Opcode::Halt) => { self.running = false; }

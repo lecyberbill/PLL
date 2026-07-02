@@ -118,10 +118,11 @@ fn eval_expr(expr: &Spanned<Expr>, env: &mut Environment) -> Result<Value, Strin
                 "send" => { if let Some(v)=evaled.last(){pll_runtime::pll_send(&v.to_string())} Ok(Value::Nil) }
                 "recv" => Ok(Value::Str(pll_runtime::pll_recv())),
                 _ => {
-                    if let Some((params, body)) = env.fns.get(name) {
+                    let fn_entry = env.fns.get(name).cloned();
+                    if let Some((params, body)) = fn_entry {
                         let saved = env.vars.clone();
                         for (i, val) in evaled.into_iter().enumerate() { if i < params.len() { env.vars.insert(params[i].clone(), val); } }
-                        for s in body { match exec_stmt(s, env) { Err(msg) => { env.vars = saved; return if let Some(v) = msg.strip_prefix("__RETURN__:") { Ok(Value::Str(v.to_string())) } else { Err(msg) }; } Ok(()) => {} } }
+                        for s in &body { match exec_stmt(s, env) { Err(msg) => { env.vars = saved; return if let Some(v) = msg.strip_prefix("__RETURN__:") { Ok(Value::Str(v.to_string())) } else { Err(msg) }; } Ok(()) => {} } }
                         env.vars = saved; Ok(Value::Nil)
                     } else { Ok(Value::Nil) }
                 }

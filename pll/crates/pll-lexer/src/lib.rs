@@ -66,7 +66,7 @@ impl Lexer {
                 ':' => { pos += 1; col += 1; Token::Colon }
                 '!' => {
                     pos += 1; col += 1;
-                    if pos < len && chars[pos] == '=' { pos += 1; col += 1; Token::Neq }
+                    if pos < len && chars[pos] == '=' { pos += 1; col += 1; Token::Assign }
                     else { return Err(LexError { message: "Expected '=' after '!'".into(), span: None }); }
                 }
                 '=' => {

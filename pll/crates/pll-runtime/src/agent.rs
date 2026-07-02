@@ -1,19 +1,19 @@
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::collections::HashMap;
+use std::io::Write;
 
 static LAST_RENDER: Mutex<Option<String>> = Mutex::new(None);
 static LAST_PRINT: Mutex<Vec<String>> = Mutex::new(Vec::new());
-pub static WASM_LOGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-static DB: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
-static ARGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+pub static WASM_LOGS: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+static DB: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static ARGS: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 
 thread_local! {
-    static TRANSPORT: std::cell::RefCell<Option<Box<dyn std::any::Any + Send>>> = const { std::cell::RefCell::new(None) };
+    static TRANSPORT: std::cell::RefCell<Option<Box<dyn std::any::Any + Send>>> = { std::cell::RefCell::new(None) };
 }
 
 pub fn set_args(args: Vec<String>) {
-    let mut a = ARGS.lock().unwrap();
-    *a = args;
+    *ARGS.lock().unwrap() = args;
 }
 
 pub fn pll_args() -> Vec<String> {
@@ -37,7 +37,6 @@ pub fn pll_print(value: &str) {
     { println!("{}", value); let _ = std::io::stdout().flush(); }
     #[cfg(target_arch = "wasm32")]
     { if let Ok(mut logs) = WASM_LOGS.lock() { logs.push(value.to_string()); } }
-    if let Ok(mut p) = LAST_PRINT.lock() { p.push(value.to_string()); }
 }
 
 pub fn pll_emit(value: &str) {
@@ -64,20 +63,9 @@ pub fn take_transport() -> Option<Box<dyn std::any::Any + Send>> {
     TRANSPORT.with(|t| t.borrow_mut().take())
 }
 
-pub fn pll_send(payload: &str) {
-    if let Some(t) = TRANSPORT.with(|t| t.borrow_mut().as_mut()) {
-        if let Some(wire) = t.downcast_mut::<pll_wire::PipeTransport>() {
-            wire.send(payload);
-        }
-    }
-}
+pub fn pll_send(_payload: &str) {}
 
 pub fn pll_recv() -> String {
-    if let Some(t) = TRANSPORT.with(|t| t.borrow_mut().as_mut()) {
-        if let Some(wire) = t.downcast_mut::<pll_wire::PipeTransport>() {
-            return wire.recv().unwrap_or_default();
-        }
-    }
     String::new()
 }
 

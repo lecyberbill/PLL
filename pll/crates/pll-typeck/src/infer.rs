@@ -1,2 +1,1 @@
-pub mod check;
-pub mod env;
+// Type inference module

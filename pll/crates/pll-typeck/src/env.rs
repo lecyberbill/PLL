@@ -75,7 +75,7 @@ impl TypeEnv {
                 Literal::Nil => TypeRef::Any,
             }),
             Expr::Ident(name) => {
-                self.vars.get(name).cloned().or(Ok(TypeRef::Any))
+                Ok(self.vars.get(name).cloned().unwrap_or(TypeRef::Any))
             }
             Expr::Binary(op, left, right) => {
                 let lt = self.check_expr(left)?;
@@ -87,7 +87,7 @@ impl TypeEnv {
             }
             Expr::Call(name, args) => {
                 for a in args { self.check_expr(a)?; }
-                self.fns.get(name).map(|f| f.ret_type.clone()).or(Ok(TypeRef::Any))
+                Ok(self.fns.get(name).map(|f| f.ret_type.clone()).unwrap_or(TypeRef::Any))
             }
             Expr::List(items) => {
                 for i in items { self.check_expr(i)?; }

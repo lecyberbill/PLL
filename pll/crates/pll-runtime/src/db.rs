@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
-static DB: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
+static DB: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub fn pll_db_set(key: String, value: String) {
     if let Ok(mut db) = DB.lock() { db.insert(key, value); }
