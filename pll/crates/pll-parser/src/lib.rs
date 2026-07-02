@@ -294,10 +294,17 @@ impl Parser {
         match self.peek() {
             Token::Or => Some((1, BinaryOp::Or)),
             Token::And => Some((2, BinaryOp::And)),
-            Token::Eq | Token::Neq => Some((3, BinaryOp::Eq)),
-            Token::Gt | Token::Lt | Token::Gte | Token::Lte => Some((4, BinaryOp::Gt)),
-            Token::Plus | Token::Minus => Some((5, BinaryOp::Add)),
-            Token::Star | Token::Slash | Token::Percent => Some((6, BinaryOp::Mul)),
+            Token::Eq => Some((3, BinaryOp::Eq)),
+            Token::Neq => Some((3, BinaryOp::Neq)),
+            Token::Gt => Some((4, BinaryOp::Gt)),
+            Token::Lt => Some((4, BinaryOp::Lt)),
+            Token::Gte => Some((4, BinaryOp::Gte)),
+            Token::Lte => Some((4, BinaryOp::Lte)),
+            Token::Plus => Some((5, BinaryOp::Add)),
+            Token::Minus => Some((5, BinaryOp::Sub)),
+            Token::Star => Some((6, BinaryOp::Mul)),
+            Token::Slash => Some((6, BinaryOp::Div)),
+            Token::Percent => Some((6, BinaryOp::Mod)),
             _ => None,
         }
     }
@@ -372,7 +379,7 @@ impl Parser {
     fn parse_block(&mut self, _ctx: &str) -> Result<Vec<Spanned<Stmt>>, ParseError> {
         let mut stmts = Vec::new();
         self.skip_newlines();
-        let top_level = |t: &Token| matches!(t, Token::End | Token::Fn | Token::T | Token::V | Token::P | Token::Agent | Token::Cap | Token::Contract | Token::Import);
+        let top_level = |t: &Token| matches!(t, Token::End | Token::Fn | Token::T | Token::V | Token::P | Token::Agent | Token::Cap | Token::Contract | Token::Import | Token::Else);
         while !top_level(self.peek()) {
             stmts.push(self.parse_stmt()?);
             self.skip_newlines();
