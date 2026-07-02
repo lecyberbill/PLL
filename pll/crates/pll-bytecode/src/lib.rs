@@ -27,13 +27,13 @@ mod tests {
     }
 
     fn run_and_capture(source: &str) -> String {
+        use std::io::Write;
+        pll_runtime::pll_render("");
+        let _ = std::io::stdout().flush();
         let bc = compile(source);
         let mut env = BcEnv::new(bc);
         let _ = env.run();
-        // Reset global render state for test isolation
-        let result = pll_runtime::last_rendered().unwrap_or_default();
-        pll_runtime::pll_render(""); // reset
-        result
+        pll_runtime::last_rendered().unwrap_or_default()
     }
 
     #[test]
