@@ -1,5 +1,8 @@
 import re
+import json
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -97,28 +100,27 @@ class GoResponse(BaseModel):
     agent_info: dict = {}
 
 
-# Keywords for complexity detection
-_SIMPLE_CREATE = {"crée", "create", "écris", "génère", "nouveau", "new", "ajoute"}
-_EDIT = {"edit", "modifie", "fix", "corrige", "change", "update", "remplace", "rename"}
 _RESUME = {"reprend", "reprends", "explique", "que fait", "décrit", "décris", "raconte", "résume", "status", "état", "projet en cours", "idée", "id", "suggestion", "propose", "idées"}
-_COMPLEX = {"api", "microservice", "backend", "frontend", "fullstack", "complète", "complète", "entier", "entière", "tous", "toutes"}
-_MULTI_STEP = {"cherche", "trouve", "search", "find", "grep", "parcours", "analyse", "explore"}
-_MULTI_FILE = {"projet complet", "application", "plusieurs fichiers", "multi", "tous les fichiers", "structure"}
 
 
-def _detect_mode(message: str, has_files: bool = False) -> str:
+async def _detect_mode(message: str, has_files: bool = False) -> str:
     msg_lower = message.lower()
+    # Fast path: resume/explain — clearly conversational
     if any(kw in msg_lower for kw in _RESUME):
         return "resume"
-    if any(kw in msg_lower for kw in _MULTI_FILE):
-        return "orchestrate"
-    if any(kw in msg_lower for kw in _MULTI_STEP) and has_files:
-        return "react"
-    if any(kw in msg_lower for kw in _COMPLEX) and has_files:
-        return "orchestrate"
-    if any(kw in msg_lower for kw in _EDIT):
-        return "simple"
-    return "simple"
+    # Fast path: greetings
+    if not message.strip() or any(msg_lower.strip() == g for g in ("hello", "bonjour", "salut", "cc", "hey", "hi")):
+        return "resume"
+    # LLM decides simple vs react
+    from services.llm_proxy import chat_completion
+    result = await chat_completion(
+        messages=[{"role": "user", "content": message[:500]}],
+        system_prompt="You classify coding requests. Reply with exactly one word: 'simple' for a single-file task or one-off edit. Reply 'react' if the request mentions multiple files (even implicitly: css+js, components+pages, backend+frontend), or requires multiple steps (install, configure, build).",
+        temperature=0,
+        backend="",
+    )
+    mode = result.get("response", "").strip().lower()
+    return mode if mode in ("simple", "react") else "react"
 
 
 @router.post("/go", response_model=GoResponse)
@@ -138,7 +140,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     conv_history = ""
     if conv_msgs:
         conv_history = "\n\n## Conversation précédente:\n" + "\n".join(
-            f"{'Utilisateur' if c.role == 'user' else 'Assistant'}: {c.content[:200]}"
+            f"{'Utilisateur' if c.role == 'user' else 'Assistant'}: {c.content}"
             for c in conv_msgs[-5:]
         )
 
@@ -146,13 +148,13 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     augmented_msg = req.message + conv_history
 
     # Save user message + append conversation history
-    db.add(Conversation(project_id=req.project_id, role="user", content=req.message[:500]))
+    db.add(Conversation(project_id=req.project_id, role="user", content=msg))
     await db.commit()
     conv_result = await db.execute(
         select(Conversation).where(Conversation.project_id == req.project_id)
             .order_by(Conversation.created_at.desc()).limit(10)
     )
-    history = "\n".join(f"{'User' if c.role=='user' else 'Asst'}: {c.content[:200]}"
+    history = "\n".join(f"{'User' if c.role=='user' else 'Asst'}: {c.content}"
                         for c in reversed(conv_result.scalars().all()))
     if history:
         req.message += "\n\n## Recent conversation:\n" + history
@@ -160,7 +162,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     async def _respond(**kw):
         answer = kw.get("answer") or kw.get("explanation") or kw.get("question", "")
         if answer:
-            db.add(Conversation(project_id=req.project_id, role="assistant", content=str(answer)[:500]))
+            db.add(Conversation(project_id=req.project_id, role="assistant", content=str(answer)))
             await db.commit()
         return GoResponse(**kw)
 
@@ -187,7 +189,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     if agent_session.current_state:
         pending = AgentBrain._parse_pending(agent_session.current_state)
 
-    mode = _detect_mode(req.message, has_files)
+    mode = await _detect_mode(req.message, has_files)
 
     # Resume mode (clear pending, fresh exploration)
     if mode == "resume":
@@ -234,7 +236,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     else:
         context_str = f"Project: {project.name}\nFiles: {', '.join(file_names) if file_names else '(empty)'}"
 
-    mode = _detect_mode(req.message, has_files)
+    mode = await _detect_mode(req.message, has_files)
 
     if mode == "resume":
         result = await brain.process_request(req.project_id, req.message, backend=req.backend)
@@ -286,7 +288,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
             f"Files: {', '.join(file_names) if file_names else '(empty)'}\n"
             f"Description: {project.description or ''}"
         )
-        agent = AgentReAct(req.project_id, req.backend, max_steps=15)
+        agent = AgentReAct(req.project_id, req.backend, max_steps=50)
         result = await agent.run(req.message, context_str)
         return await _respond(
             answer=result.get("answer", ""),
@@ -296,19 +298,143 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
             mode="react",
         )
 
-    from services.agent_coordinator import AgentCoordinator
+    # Fallback: single ReAct agent with high step limit
+    from services.agent_react import AgentReAct
     context_str = (
         f"## Project: {project.name}\n"
-        f"Files: {', '.join(file_names) if file_names else '(empty)'}"
+        f"Files: {', '.join(file_names) if file_names else '(empty)'}\n"
+        f"Description: {project.description or ''}"
     )
-    coord = AgentCoordinator(req.project_id, req.backend)
-    result = await coord.orchestrate(req.message, context_str)
+    agent = AgentReAct(req.project_id, req.backend, max_steps=50)
+    result = await agent.run(req.message, context_str)
     return await _respond(
         answer=result.get("answer", ""),
         code=result.get("code", ""),
         file_path=result.get("file_path", ""),
-        steps=[{"subtask": s.get("subtask", ""), "result": s.get("result", "")[:200]}
-               for s in result.get("subtasks", [])],
-        mode="orchestrate",
+        steps=result.get("steps", []),
+        mode="react",
     )
+
+
+@router.post("/go-stream")
+async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
+    """SSE streaming version of /go. Yields events as the agent works."""
+    project = await db.get(ProjectModel, req.project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    async def event_stream():
+        queue = asyncio.Queue()
+        yield f"data: {json.dumps({'type': 'init', 'project': project.name})}\n\n"
+
+        # Save user message
+        db.add(Conversation(project_id=req.project_id, role="user", content=req.message))
+        await db.commit()
+
+        # Gather files
+        files_result = await db.execute(
+            select(Artifact).where(Artifact.project_id == req.project_id)
+        )
+        files = files_result.scalars().all()
+        has_files = len(files) > 0
+        file_names = [f.path for f in files]
+        if not has_files and project.disk_path:
+            from pathlib import Path
+            pdir = Path(project.disk_path).resolve()
+            if pdir.exists():
+                disk_files = [f for f in pdir.rglob("*") if f.is_file()]
+                has_files = len(disk_files) > 0
+                file_names = [str(f.relative_to(pdir)) for f in disk_files[:50]]
+
+        brain = AgentBrain(db)
+        mode = await _detect_mode(req.message, has_files)
+
+        yield f"data: {json.dumps({'type': 'mode', 'mode': mode})}\n\n"
+
+        async def _emit(ev_type, **kw):
+            await queue.put(({"type": ev_type, **kw}, False))
+
+        async def _drain_queue():
+            """Yield all queued events and stop when sentinel received."""
+            while True:
+                ev, done = await queue.get()
+                if done:
+                    break
+                yield f"data: {json.dumps(ev)}\n\n"
+
+        if mode in ("simple", "resume"):
+            result = await brain.process_request(req.project_id, req.message, backend=req.backend)
+            explanation = result.get("explanation", "")
+            if explanation:
+                yield f"data: {json.dumps({'type': 'explanation', 'text': explanation})}\n\n"
+            if result.get("code"):
+                yield f"data: {json.dumps({'type': 'code', 'code': result['code'], 'file_path': result.get('file_path', '')})}\n\n"
+            answer = explanation or f"{'Edited' if result.get('edit_mode') else 'Created'} {result.get('file_path', '')}"
+        elif mode == "react":
+            context_str = (
+                f"## Project: {project.name}\n"
+                f"Files: {', '.join(file_names) if file_names else '(empty)'}\n"
+                f"Description: {project.description or ''}"
+            )
+            from services.agent_react import AgentReAct
+            agent = AgentReAct(req.project_id, req.backend, max_steps=50)
+
+            async def step_cb(steps, step_info, current, total):
+                await _emit("step", step=current, total=total,
+                            tool=step_info.get("tool"),
+                            result=step_info.get("result", ""))
+
+            # Run agent in background, drain queue in foreground
+            async def _run_agent():
+                try:
+                    result = await asyncio.wait_for(
+                        agent.run(req.message, context_str, step_callback=step_cb),
+                        timeout=300  # 5 min max
+                    )
+                    return result
+                except asyncio.TimeoutError:
+                    return {"answer": "Agent timed out after 5 minutes.", "steps": []}
+                finally:
+                    await queue.put(({}, True))  # always signal end, even on error
+
+            agent_task = asyncio.create_task(_run_agent())
+            async for ev in _drain_queue():
+                yield ev
+            result = await agent_task
+            answer = result.get("answer", "")
+            if result.get("code"):
+                yield f"data: {json.dumps({'type': 'code', 'code': result['code'], 'file_path': result.get('file_path', '')})}\n\n"
+        else:
+            from services.agent_react import AgentReAct
+            context_str = (
+                f"## Project: {project.name}\n"
+                f"Files: {', '.join(file_names) if file_names else '(empty)'}\n"
+                f"Description: {project.description or ''}"
+            )
+            agent = AgentReAct(req.project_id, req.backend, max_steps=50)
+
+            async def step_cb(steps, step_info, current, total):
+                await _emit("step", step=current, total=total,
+                            tool=step_info.get("tool"),
+                            result=step_info.get("result", ""))
+
+            async def _run_agent():
+                result = await agent.run(req.message, context_str, step_callback=step_cb)
+                await queue.put(({}, True))
+                return result
+
+            agent_task = asyncio.create_task(_run_agent())
+            async for ev in _drain_queue():
+                yield ev
+            result = await agent_task
+            answer = result.get("answer", "")
+
+        # Save assistant reply
+        if answer:
+            db.add(Conversation(project_id=req.project_id, role="assistant", content=str(answer)))
+            await db.commit()
+
+        yield f"data: {json.dumps({'type': 'done', 'answer': answer})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 

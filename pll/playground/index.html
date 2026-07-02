@@ -47,11 +47,18 @@
                         <button class="tab-btn" data-tab="tab-gca">GCA</button>
                         <button class="tab-btn" data-tab="tab-agentic">Agent 🤖</button>
                         <button class="tab-btn" data-tab="tab-packages">Paquets</button>
+                        <button class="tab-btn" data-tab="tab-conversations">Historique</button>
                     </div>
                 </div>
                 <div class="tab-content active" id="tab-terminal">
-                    <div class="terminal-output" id="terminal-log">
-                        <div class="sys-msg">Console PLL prête.</div>
+                    <div class="terminal-panel">
+                        <div class="terminal-output" id="terminal-log">
+                            <div class="sys-msg">Console PLL prête. Tapez une commande ci-dessous.</div>
+                        </div>
+                        <div class="terminal-input-bar">
+                            <span class="terminal-prompt">❯</span>
+                            <input type="text" id="terminal-input" placeholder="Commande shell..." spellcheck="false" autocomplete="off">
+                        </div>
                     </div>
                 </div>
                 <div class="tab-content" id="tab-vfs">
@@ -94,7 +101,7 @@
                             <div class="sys-msg">Posez une question à l'agent.</div>
                         </div>
                         <div class="agentic-input-bar">
-                            <textarea id="agentic-input" rows="2" placeholder="Ex: Crée une fonction fibonacci..."></textarea>
+                            <textarea id="agentic-input" rows="4" placeholder="Ex: Crée une fonction fibonacci..."></textarea>
                             <button id="btn-agentic-send" class="btn btn-primary">Envoyer</button>
                         </div>
                     </div>
@@ -108,12 +115,22 @@
                         <div id="packages-list"></div>
                     </div>
                 </div>
+                <div class="tab-content" id="tab-conversations">
+                    <div class="conv-panel">
+                        <div class="conv-header">
+                            <h3>Conversations</h3>
+                            <button id="btn-refresh-conv" class="btn btn-sm btn-secondary">↻</button>
+                        </div>
+                        <div class="conv-list" id="conv-list"></div>
+                    </div>
+                </div>
             </section>
         </main>
-        <div id="git-status-bar">
+        <div id="git-status-bar" title="Cliquer pour debug">
             <span id="git-branch">⎇ —</span>
             <span id="git-changes"></span>
             <span id="git-remote"></span>
+            <span id="git-debug" style="display:none;font-size:10px;color:var(--text-muted);margin-left:auto"></span>
         </div>
     </div>
     <div class="modal" id="vfs-modal">
@@ -130,9 +147,27 @@
     <div class="modal" id="project-modal">
         <div class="modal-content">
             <h2 id="project-modal-title">Nouveau Projet</h2>
-            <input type="text" id="modal-project-name" placeholder="Nom">
-            <textarea id="modal-project-desc" placeholder="Description..."></textarea>
-            <input type="text" id="modal-project-path" placeholder="Chemin disque (optionnel)">
+            <div class="form-group">
+                <label>Nom du projet</label>
+                <input type="text" id="modal-project-name" placeholder="mon-projet">
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea id="modal-project-desc" placeholder="Que va faire ce projet ?" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Template</label>
+                <div class="template-chips" id="template-chips">
+                    <div class="template-chip active" data-tpl="empty">🧩 Vide</div>
+                    <div class="template-chip" data-tpl="flask">🐍 Flask API</div>
+                    <div class="template-chip" data-tpl="cli">⚙️ CLI Tool</div>
+                    <div class="template-chip" data-tpl="pll">🔷 PLL</div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Chemin disque (optionnel — laisse vide pour mode DB)</label>
+                <input type="text" id="modal-project-path" placeholder="C:\dev\mon-projet">
+            </div>
             <div class="modal-actions">
                 <button id="project-modal-cancel" class="btn btn-secondary">Annuler</button>
                 <button id="project-modal-save" class="btn btn-primary">Créer</button>

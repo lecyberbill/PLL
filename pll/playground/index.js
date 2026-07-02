@@ -10,6 +10,7 @@ let currentProjectId = null;
 let gcaSessionId = null;
 let gcaGeneration = 0;
 let agenticConversationHistory = [];
+let gitFileStatus = {};  // { "path": "M"|"A"|"?"|"D" } for VFS badges
 
 const DEFAULT_FILES = {
     'main.py': 'def hello():\n    print("Hello, PLL!")\n\nhello()',
@@ -51,6 +52,14 @@ const elBtnRefreshPackages = document.getElementById('btn-refresh-packages');
 const elGitBranch = document.getElementById('git-branch');
 const elGitChanges = document.getElementById('git-changes');
 const elGitRemote = document.getElementById('git-remote');
+const elGitDebug = document.getElementById('git-debug');
+const elConvList = document.getElementById('conv-list');
+const elBtnRefreshConv = document.getElementById('btn-refresh-conv');
+const elTerminalInput = document.getElementById('terminal-input');
+
+// Terminal command history
+let termHistory = [];
+let termHistIdx = -1;
 
 async function api(path, options = {}) {
     const headers = { 'Content-Type': 'application/json', ...options.headers };
@@ -80,6 +89,8 @@ function clearEditor() {
 
 function clearDefaults() {
     filesList = [];
+    openFiles = [];
+    activeFile = null;
     clearEditor();
 }
 
@@ -142,6 +153,17 @@ function renderTabs() {
 }
 
 function renderVfsList() {
+    // Save expanded state before re-render
+    const expanded = new Set();
+    document.querySelectorAll('.vfs-toggle').forEach(el => {
+        if (el.textContent === '▾') {
+            const parent = el.closest('.vfs-item');
+            if (parent) {
+                const nameEl = parent.querySelector('.vfs-item-name');
+                if (nameEl) expanded.add(nameEl.textContent);
+            }
+        }
+    });
     elVfsList.innerHTML = '';
     const tree = {};
     for (const fp of filesList) {
@@ -157,10 +179,10 @@ function renderVfsList() {
             }
         }
     }
-    renderTree(elVfsList, tree, 0);
+    renderTree(elVfsList, tree, 0, expanded);
 }
 
-function renderTree(container, tree, depth) {
+function renderTree(container, tree, depth, expanded = new Set()) {
     const keys = Object.keys(tree).sort((a, b) => {
         const ta = tree[a].type, tb = tree[b].type;
         if (ta !== tb) return ta === 'dir' ? -1 : 1;
@@ -174,7 +196,8 @@ function renderTree(container, tree, depth) {
         if (node.type === 'dir') {
             const toggle = document.createElement('span');
             toggle.className = 'vfs-toggle';
-            toggle.textContent = '▸';
+            const isExpanded = expanded.has(key);
+            toggle.textContent = isExpanded ? '▾' : '▸';
             toggle.style.cursor = 'pointer';
             toggle.style.marginRight = '4px';
             item.appendChild(toggle);
@@ -183,19 +206,27 @@ function renderTree(container, tree, depth) {
             name.textContent = key;
             item.appendChild(name);
             const childContainer = document.createElement('div');
-            childContainer.style.display = 'none';
-            renderTree(childContainer, node.children, depth + 1);
+            childContainer.style.display = isExpanded ? '' : 'none';
+            renderTree(childContainer, node.children, depth + 1, expanded);
             toggle.onclick = () => {
-                const expanded = childContainer.style.display !== 'none';
-                childContainer.style.display = expanded ? 'none' : '';
-                toggle.textContent = expanded ? '▸' : '▾';
+                const nowExpanded = childContainer.style.display !== 'none';
+                childContainer.style.display = nowExpanded ? 'none' : '';
+                toggle.textContent = nowExpanded ? '▸' : '▾';
             };
             container.appendChild(item);
             container.appendChild(childContainer);
         } else {
             const name = document.createElement('span');
             name.className = `vfs-item-name ${node.path === activeFile ? 'active' : ''}`;
-            name.textContent = key;
+            name.dataset.path = node.path;
+            const badge = gitFileStatus[node.path];
+            if (badge) {
+                const badgeEl = document.createElement('span');
+                badgeEl.className = `vfs-git-badge ${badge === '?' ? 'untracked' : badge === 'D' ? 'deleted' : badge === 'M' ? 'modified' : 'staged'}`;
+                badgeEl.textContent = badge;
+                name.prepend(badgeEl);
+            }
+            name.appendChild(document.createTextNode(key));
             name.onclick = () => loadFileToEditor(node.path);
             const actions = document.createElement('div');
             actions.className = 'vfs-actions';
@@ -236,7 +267,10 @@ async function loadFileToEditor(path) {
     if (content !== null && content !== undefined) setEditorContent(content);
     setEditorLanguage(detectLanguage(path));
     renderTabs();
-    renderVfsList();
+    // Update VFS active highlight without full re-render (preserves expanded dirs)
+    document.querySelectorAll('.vfs-item-name.active').forEach(el => el.classList.remove('active'));
+    const activeEl = document.querySelector(`.vfs-item-name[data-path="${CSS.escape(path)}"]`);
+    if (activeEl) activeEl.classList.add('active');
 }
 
 async function renameFile(path) {
@@ -314,6 +348,7 @@ async function saveProjectToServer() {
         if (c !== null && c !== undefined && !filesList.includes(p)) filesList.push(p);
     }
     for (const path of filesList) {
+        if (path === '.gitkeep') continue;
         const content = get_virtual_file(path);
         if (content !== null && content !== undefined) {
             await api(`/api/projects/${currentProjectId}/files`, {
@@ -348,24 +383,54 @@ async function loadProjectFromServer(projectId) {
     logToTerminal(`Projet chargé (${filesList.length} fichiers).`, 'sys-msg');
     await loadProjects();
     refreshGitStatus();
+    loadConversations();
+    await loadAgenticHistory(projectId);
+}
+
+async function loadAgenticHistory(projectId) {
+    try {
+        const msgs = await api(`/api/projects/${projectId}/conversations?limit=50`);
+        elAgenticConversation.innerHTML = '';
+        if (!msgs || msgs.length === 0) {
+            elAgenticConversation.innerHTML = '<div class="sys-msg">Posez une question à l\'agent.</div>';
+            return;
+        }
+        for (const m of msgs) {
+            addAgenticMessage(m.role, m.content);
+        }
+    } catch {
+        elAgenticConversation.innerHTML = '<div class="sys-msg">Posez une question à l\'agent.</div>';
+    }
 }
 
 async function refreshGitStatus() {
     if (!currentProjectId) {
-        elGitBranch.textContent = '';
+        elGitBranch.textContent = '⎇ — (aucun projet)';
+        gitFileStatus = {};
         elGitChanges.textContent = '';
         elGitRemote.textContent = '';
+        elGitDebug.textContent = '';
         return;
     }
     try {
         const st = await api(`/api/git/${currentProjectId}/status`);
+        elGitDebug.textContent = st ? JSON.stringify(st) : 'no response';
         if (!st || !st.is_repo) {
-            elGitBranch.textContent = '';
+            gitFileStatus = {};
+            elGitBranch.textContent = '⎇ — (pas de repo)';
             elGitChanges.textContent = '';
             elGitRemote.textContent = '';
+            elGitChanges.className = '';
+            elGitRemote.className = '';
             return;
         }
         elGitBranch.textContent = `⎇ ${st.branch || 'main'}`;
+        // Build file → status map for VFS badges
+        gitFileStatus = {};
+        for (const f of st.staged || []) gitFileStatus[f] = 'A';
+        for (const f of st.modified || []) gitFileStatus[f] = 'M';
+        for (const f of st.untracked || []) gitFileStatus[f] = '?';
+        for (const f of st.deleted || []) gitFileStatus[f] = 'D';
         const changes = [];
         if (st.staged.length) changes.push(`${st.staged.length} staged`);
         if (st.modified.length) changes.push(`${st.modified.length} modified`);
@@ -383,11 +448,40 @@ async function refreshGitStatus() {
             elGitRemote.textContent = '';
             elGitRemote.className = '';
         }
-    } catch {
-        elGitBranch.textContent = '';
+    } catch (e) {
+        elGitBranch.textContent = '⎇ — (erreur)';
         elGitChanges.textContent = '';
         elGitRemote.textContent = '';
+        elGitDebug.textContent = 'error: ' + e.message;
     }
+    renderVfsList();  // Update git badges in VFS tree
+}
+
+async function loadConversations() {
+    if (!currentProjectId) { elConvList.innerHTML = '<div class="sys-msg">Aucun projet sélectionné</div>'; return; }
+    try {
+        const msgs = await api(`/api/projects/${currentProjectId}/conversations?limit=100`);
+        elConvList.innerHTML = '';
+        if (!msgs || msgs.length === 0) {
+            elConvList.innerHTML = '<div class="sys-msg">Aucune conversation</div>';
+            return;
+        }
+        for (const m of msgs) {
+            const div = document.createElement('div');
+            div.className = `conv-item ${m.role}`;
+            const date = new Date(m.created_at).toLocaleString('fr-FR');
+            div.innerHTML = `<div class="conv-role">${m.role} <span class="conv-date">${date}</span></div><div class="conv-content">${escHtml(m.content)}</div>`;
+            elConvList.appendChild(div);
+        }
+    } catch (e) {
+        elConvList.innerHTML = '<div class="sys-msg">Erreur chargement: ' + e.message + '</div>';
+    }
+}
+
+function escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
 }
 
 function addAgenticMessage(role, content) {
@@ -404,6 +498,7 @@ function addAgenticMessage(role, content) {
     div.appendChild(text);
     elAgenticConversation.appendChild(div);
     elAgenticConversation.scrollTop = elAgenticConversation.scrollHeight;
+    return div;
 }
 
 async function ensureProjectForAgentic() {
@@ -415,22 +510,15 @@ async function ensureProjectForAgentic() {
         });
         currentProjectId = project.id;
         await loadProjects();
-        if (activeFile) {
-            set_virtual_file(activeFile, getEditorContent());
-            if (!filesList.includes(activeFile)) filesList.push(activeFile);
-        }
-        for (const p of openFiles) {
-            const c = get_virtual_file(p);
-            if (c !== null && c !== undefined && !filesList.includes(p)) filesList.push(p);
-        }
-        for (const path of filesList) {
-            const content = get_virtual_file(path);
-            if (content !== null && content !== undefined) {
-                await api(`/api/projects/${currentProjectId}/files`, {
-                    method: 'POST', body: JSON.stringify({ path, content }),
-                });
-            }
-        }
+        // Clear VFS defaults — a new project starts empty
+        filesList = [];
+        openFiles = [];
+        activeFile = null;
+        clearEditor();
+        // Save empty project to server
+        await api(`/api/projects/${currentProjectId}/files`, {
+            method: 'POST', body: JSON.stringify({ path: '.gitkeep', content: '' }),
+        });
         addAgenticMessage('system', `Projet "${project.name}" (ID: ${project.id}).`);
         return true;
     } catch (e) {
@@ -447,59 +535,98 @@ async function sendAgenticMessage() {
     if (!await ensureProjectForAgentic()) return;
     await saveProjectToServer();
     const backend = elAgenticBackend.value;
-    addAgenticMessage('system', `Agent réfléchit (${backend === 'auto' ? 'auto' : backend})...`);
+
+    // Create a placeholder for streaming
+    const placeholder = addAgenticMessage('system', '🤖 Agent en cours...');
+    placeholder.style.opacity = '0.6';
+
     try {
-        const result = await api('/api/agentic/go', {
+        const resp = await fetch('/api/agentic/go-stream', {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 project_id: currentProjectId,
                 message: msg,
                 backend: backend === 'auto' ? '' : backend,
             }),
         });
+        if (!resp.ok) { placeholder.textContent = `Erreur ${resp.status}`; return; }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
         let stepsHtml = '';
-        if (result.steps && result.steps.length > 0) {
-            const icons = { read_file: '📖', write_file: '✏️', edit_artifact: '✏️', glob_files: '🔍', grep_files: '🔍', list_dir: '📂', run_command: '⚡', search_vault: '💾', git_status: '⎇', git_commit: '📝', git_push: '⬆️', git_init: '🔧', git_remote: '🔗', exec_pll: '⚙️', web_fetch: '🌐', web_search: '🔎', edit_file: '✏️', exec_python: '🐍', exec_shell: '💻', tree: '🌳', diff_files: '📊', search_code: '🔍', count_tokens: '🔢', read_lines: '📄', zip_project: '📦', final_answer: '✅' };
-            stepsHtml = result.steps.map(s => {
-                const icon = icons[s.tool] || '➡️';
-                let label = s.tool || s.subtask || `Step ${s.step}`;
-                let detail = '';
-                if (s.args) {
-                    if (s.args.path) detail = s.args.path;
-                    else if (s.args.pattern) detail = s.args.pattern;
-                    else if (s.args.code) detail = (s.args.code + '').slice(0, 50);
-                    else if (s.args.command) detail = s.args.command.slice(0, 50);
-                    else if (s.args.url) detail = s.args.url;
-                    else if (s.args.text) detail = s.args.text.slice(0, 60);
+        let answer = '';
+        let finalCode = '';
+        let finalPath = '';
+        let subtaskResults = [];
+        let thinkingDots = 0;
+        let thinkingTimer = setInterval(() => {
+            thinkingDots = (thinkingDots + 1) % 4;
+            const dots = '.'.repeat(thinkingDots);
+            if (!placeholder.textContent.includes('✅') && !placeholder.textContent.includes('⚠️')) {
+                placeholder.textContent = `🤖 réfléchit${dots}`;
+            }
+        }, 500);
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            thinkingDots = 0;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop() || '';
+
+            for (const part of parts) {
+                for (const line of part.split('\n')) {
+                    if (!line.startsWith('data: ')) continue;
+                    try {
+                        const ev = JSON.parse(line.slice(6));
+                        if (ev.type === 'mode') {
+                            placeholder.textContent = `🤖 Agent · mode ${ev.mode}`;
+                        } else if (ev.type === 'step') {
+                            const icons = { read_file: '📖', write_file: '✏️', edit_artifact: '✏️', glob_files: '🔍', grep_files: '🔍', list_dir: '📂', run_command: '⚡', search_vault: '💾', git_status: '⎇', git_commit: '📝', git_push: '⬆️', git_init: '🔧', git_remote: '🔗', exec_pll: '⚙️', web_fetch: '🌐', web_search: '🔎', edit_file: '✏️', exec_python: '🐍', exec_shell: '💻', tree: '🌳', diff_files: '📊', search_code: '🔍', count_tokens: '🔢', read_lines: '📄', zip_project: '📦', publish_package: '📦', final_answer: '✅' };
+                            const icon = icons[ev.tool] || '➡️';
+                            // Extract useful info from result (file path, bytes written)
+                            let label = ev.tool;
+                            if (ev.result) {
+                                // "Written 1234 bytes to src/file.ts" or "Saved artifact src/file.ts (project 1)"
+                                const m = ev.result.match(/(?:bytes to|Saved artifact)\s+(\S+)/);
+                                if (m) label = m[1];
+                                else if (ev.result.startsWith('ERROR')) label = `⚠️ ${ev.result.slice(0, 50)}`;
+                                else label = ev.result.slice(0, 60);
+                            }
+                            stepsHtml += `${icon} ${label}\n`;
+                            placeholder.textContent = `🤖 ${label}`;
+                        } else if (ev.type === 'explanation') {
+                            placeholder.textContent = `🤖 ${ev.text.slice(0, 120)}`;
+                        } else if (ev.type === 'code') {
+                            finalCode = ev.code;
+                            finalPath = ev.file_path;
+                        } else if (ev.type === 'subtask') {
+                            subtaskResults.push(`📋 ${ev.subtask}`);
+                            stepsHtml += `📋 **${ev.subtask}**\n`;
+                        } else if (ev.type === 'done') {
+                            answer = ev.answer;
+                        }
+                    } catch (e) { /* skip malformed events */ }
                 }
-                let preview = '';
-                if (s.result && typeof s.result === 'string') {
-                    const clean = s.result.replace(/```[\s\S]*?```/g, '[code]').slice(0, 80);
-                    if (clean) preview = ` → ${clean}`;
-                }
-                const d = detail ? ` \`${detail}\`` : '';
-                return `${icon} **${label}**${d}${preview}`;
-            }).join('\n');
+            }
         }
-        if (result.question) {
-            addAgenticMessage('assistant', `**❓ Question :** ${result.question}\n\n_Réponds dans le chat._`);
-        } else if (result.explanation) {
-            addAgenticMessage('assistant', stepsHtml ? `${stepsHtml}\n\n${result.explanation}` : result.explanation);
-        } else if (result.code && result.file_path) {
-            set_virtual_file(result.file_path, result.code);
-            if (!filesList.includes(result.file_path)) filesList.push(result.file_path);
-            renderVfsList();
-            const lang = detectLanguage(result.file_path);
-            const labels = { create: '**Code créé**', edit: '**Code modifié**', react: '**ReAct**', orchestrate: '**Multi-agent**' };
-            let response = `${labels[result.mode] || '**Terminé**'} → \`${result.file_path}\` (${lang})\n`;
-            if (stepsHtml) response = `${stepsHtml}\n\n${response}`;
-            response += `\n\`\`\`${lang}\n${result.code}\n\`\`\``;
-            addAgenticMessage('assistant', response);
-            await loadFileToEditor(result.file_path);
-        } else if (result.answer) {
-            addAgenticMessage('assistant', stepsHtml ? `${stepsHtml}\n\n${result.answer}` : result.answer);
+
+        clearInterval(thinkingTimer);
+        placeholder.remove();
+
+        if (finalCode && finalPath) {
+            if (!filesList.includes(finalPath)) filesList.push(finalPath);
+            addAgenticMessage('assistant', `${stepsHtml}\n\n✅ **Terminé** — fichiers créés. Consulte l'onglet Fichiers.`);
+            if (currentProjectId) await loadProjectFromServer(currentProjectId);
+        } else if (answer) {
+            addAgenticMessage('assistant', stepsHtml ? `${stepsHtml}\n\n${answer}` : answer);
+            if (currentProjectId) await loadProjectFromServer(currentProjectId);
         } else {
-            addAgenticMessage('assistant', '✅ Terminé.');
+            addAgenticMessage('assistant', stepsHtml || '✅ Terminé.');
+            if (currentProjectId) await loadProjectFromServer(currentProjectId);
         }
     } catch (e) {
         addAgenticMessage('system', `Erreur: ${e.message}`);
@@ -557,9 +684,30 @@ async function gcaRefreshStatus() {
         elGcaVault.innerHTML = vault.length === 0
             ? '<div class="sys-msg">Vault vide.</div>'
             : vault.slice(-10).map(e =>
-                `<div class="vault-entry"><strong>${e.key}</strong> <span class="sys-msg">(${new Date(e.created_at).toLocaleString()})</span><pre>${e.content.slice(0, 200)}</pre></div>`
+                `<div class="vault-entry"><strong>${e.key}</strong> <span class="sys-msg">(${new Date(e.created_at).toLocaleString()})</span><pre>${e.content.slice(0, 200)}</pre><button class="btn btn-sm btn-secondary publish-pkg-btn" data-key="${escHtml(e.key)}" title="Publier comme paquet PLL">📦 Publier</button></div>`
             ).join('');
+        document.querySelectorAll('.publish-pkg-btn').forEach(btn => {
+            btn.addEventListener('click', () => publishFromVault(btn.dataset.key));
+        });
     } catch (e) { console.warn(e.message); }
+}
+
+async function publishFromVault(key) {
+    if (!currentProjectId) return;
+    const name = prompt("Nom du paquet PLL:", key.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase());
+    if (!name) return;
+    try {
+        const vault = await api(`/api/gca/vault/${currentProjectId}`);
+        const entry = vault.find(e => e.key === key);
+        const source = entry ? entry.content : "";
+        await api('/api/packages', {
+            method: 'POST',
+            body: JSON.stringify({ name, version: "0.1.0", description: `Published from ${key}`, author: "GCA Agent", source_content: source }),
+        });
+        logToTerminal(`📦 Package '${name}' publié.`, 'sys-msg');
+        await refreshPackages();
+        switchTab('tab-packages');
+    } catch (e) { logToTerminal(`Erreur publication: ${e.message}`, 'error-msg'); }
 }
 
 async function refreshPackages() {
@@ -567,10 +715,83 @@ async function refreshPackages() {
         const pkgs = await api('/api/packages');
         elPackagesList.innerHTML = pkgs.length === 0
             ? '<div class="sys-msg">Aucun paquet.</div>'
-            : pkgs.map(p => `<div class="package-item"><strong>${p.name}</strong> v${p.version} <span class="sys-msg">par ${p.author || '?'}</span></div>`).join('');
+            : pkgs.map(p => `<div class="package-item"><strong>${p.name}</strong> v${p.version} <span class="sys-msg">par ${p.author || '?'}</span> <button class="btn btn-sm btn-secondary view-pkg-btn" data-name="${p.name}" title="Voir le code source">📄</button></div>`).join('');
+        document.querySelectorAll('.view-pkg-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                try {
+                    const pkg = await api(`/api/packages/${encodeURIComponent(btn.dataset.name)}/download`);
+                    addAgenticMessage('assistant', `**${pkg.name}** v${pkg.version}\n\`\`\`pll\n${(pkg.source_content || '').slice(0, 2000)}\n\`\`\``);
+                    switchTab('tab-agentic');
+                } catch (e) { logToTerminal(`Erreur: ${e.message}`, 'error-msg'); }
+            });
+        });
     } catch {
         elPackagesList.innerHTML = '<div class="sys-msg">Serveur indisponible.</div>';
     }
+}
+
+// Terminal: execute command via API
+async function execTerminalCommand(cmd) {
+    if (!cmd.trim()) return;
+    termHistory.push(cmd);
+    termHistIdx = termHistory.length;
+    // Show command
+    const cmdDiv = document.createElement('div');
+    cmdDiv.className = 'cmd';
+    cmdDiv.textContent = `❯ ${cmd}`;
+    elTerminalLog.appendChild(cmdDiv);
+    elTerminalLog.scrollTop = elTerminalLog.scrollHeight;
+    try {
+        const resp = await fetch(`/api/exec/run?command=${encodeURIComponent(cmd)}&timeout=30`, { method: 'POST' });
+        const result = await resp.json();
+        if (result.stdout) {
+            const out = document.createElement('div');
+            out.className = 'stdout';
+            out.textContent = result.stdout;
+            elTerminalLog.appendChild(out);
+        }
+        if (result.stderr) {
+            const err = document.createElement('div');
+            err.className = 'stderr';
+            err.textContent = result.stderr;
+            elTerminalLog.appendChild(err);
+        }
+        const status = document.createElement('div');
+        status.className = result.exit_code === 0 ? 'exit-ok' : 'exit-err';
+        status.textContent = `Process exited with code ${result.exit_code}`;
+        elTerminalLog.appendChild(status);
+    } catch (e) {
+        const err = document.createElement('div');
+        err.className = 'stderr';
+        err.textContent = `Erreur: ${e.message}`;
+        elTerminalLog.appendChild(err);
+    }
+    elTerminalLog.scrollTop = elTerminalLog.scrollHeight;
+}
+
+if (elTerminalInput) {
+    elTerminalInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const cmd = elTerminalInput.value;
+            elTerminalInput.value = '';
+            execTerminalCommand(cmd);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (termHistIdx > 0) {
+                termHistIdx--;
+                elTerminalInput.value = termHistory[termHistIdx];
+            }
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (termHistIdx < termHistory.length - 1) {
+                termHistIdx++;
+                elTerminalInput.value = termHistory[termHistIdx];
+            } else {
+                termHistIdx = termHistory.length;
+                elTerminalInput.value = '';
+            }
+        }
+    });
 }
 
 // Event listeners
@@ -632,10 +853,38 @@ elBtnNewProject.addEventListener('click', () => {
     elModalProjectName.value = '';
     elModalProjectDesc.value = '';
     elModalProjectPath.value = '';
+    selectedTemplate = 'empty';
+    document.querySelectorAll('.template-chip').forEach(c => c.classList.remove('active'));
+    const defaultChip = document.querySelector('.template-chip[data-tpl="empty"]');
+    if (defaultChip) defaultChip.classList.add('active');
     elProjectModal.classList.add('open');
 });
 
 elProjectModalCancel.addEventListener('click', () => elProjectModal.classList.remove('open'));
+// Template chips for new project
+let selectedTemplate = 'empty';
+document.addEventListener('click', (e) => {
+    const chip = e.target.closest('.template-chip');
+    if (!chip) return;
+    document.querySelectorAll('.template-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    selectedTemplate = chip.dataset.tpl;
+});
+
+function getStarterFiles(tpl) {
+    if (tpl === 'flask') return {
+        'app.py': 'from flask import Flask, jsonify, request\n\napp = Flask(__name__)\n\n@app.route("/")\ndef home():\n    return jsonify({"message": "Hello PLL!"})\n\nif __name__ == "__main__":\n    app.run(debug=True)',
+        'requirements.txt': 'flask\n',
+    };
+    if (tpl === 'cli') return {
+        'main.py': 'import sys\n\ndef main():\n    args = sys.argv[1:]\n    print(f"Hello PLL! Args: {args}")\n\nif __name__ == "__main__":\n    main()',
+    };
+    if (tpl === 'pll') return {
+        'main.pll': 'fn greet(name: str) -> str:\n    return str_concat("Hello, ", name)\n\nrender greet("PLL")',
+    };
+    return {};
+}
+
 elProjectModalSave.addEventListener('click', async () => {
     const name = elModalProjectName.value.trim();
     if (!name) return;
@@ -650,6 +899,12 @@ elProjectModalSave.addEventListener('click', async () => {
         elProjectModal.classList.remove('open');
         elBtnDeleteProject.style.display = '';
         clearDefaults();
+        // Fill starter files from template
+        const starter = getStarterFiles(selectedTemplate);
+        for (const [path, content] of Object.entries(starter)) {
+            set_virtual_file(path, content);
+            filesList.push(path);
+        }
         await saveProjectToServer();
         await loadProjectFromServer(currentProjectId);
     } catch (e) { logToTerminal(`Erreur: ${e.message}`, 'error-msg'); }
@@ -693,6 +948,20 @@ elAgenticClear.addEventListener('click', () => {
 });
 
 elBtnRefreshPackages.addEventListener('click', refreshPackages);
+
+// Git status bar debug (click to toggle)
+document.getElementById('git-status-bar').addEventListener('click', () => {
+    elGitDebug.style.display = elGitDebug.style.display === 'none' ? 'inline' : 'none';
+});
+
+// Load conversations on tab switch
+const origSwitchTab = switchTab;
+switchTab = function(tabId) {
+    origSwitchTab(tabId);
+    if (tabId === 'tab-conversations') loadConversations();
+};
+
+elBtnRefreshConv.addEventListener('click', loadConversations);
 
 // Tab switching
 document.querySelectorAll('.tab-btn').forEach(btn => {

@@ -5,3 +5,6 @@ aiosqlite==0.20.0
 pydantic==2.10.3
 pydantic-core==2.27.1
 python-multipart==0.0.18
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.1

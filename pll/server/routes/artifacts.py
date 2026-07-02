@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
-from models import Project, Artifact
+from models import Project, Artifact, Conversation
 from schemas import (
     ProjectCreate, ProjectUpdate, ProjectOut,
     ArtifactCreate, ArtifactUpdate, ArtifactOut,
@@ -272,3 +272,16 @@ async def sync_from_disk(project_id: int, db: AsyncSession = Depends(get_db)):
             synced.append(rel)
     await db.commit()
     return synced
+
+
+@router.get("/{project_id}/conversations", response_model=list[dict])
+async def list_conversations(project_id: int, limit: int = Query(50, le=200), db: AsyncSession = Depends(get_db)):
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    result = await db.execute(
+        select(Conversation).where(Conversation.project_id == project_id)
+            .order_by(Conversation.created_at.desc()).limit(limit)
+    )
+    return [{"role": c.role, "content": c.content, "created_at": c.created_at.isoformat()}
+            for c in reversed(result.scalars().all())]

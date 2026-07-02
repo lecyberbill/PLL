@@ -124,7 +124,6 @@ class PackageOut(BaseModel):
     description: str
     author: str
     created_at: datetime
-    updated_at: datetime
 
     model_config = {"from_attributes": True}
 

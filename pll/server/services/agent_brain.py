@@ -557,6 +557,20 @@ class AgentBrain:
 
     async def _save_artifact(self, project_id: int, path: str, content: str):
         """Save file to project. Disk mode = filesystem only. DB mode = Artifact + filesystem."""
+        import re as _re
+        file_markers = list(_re.finditer(r'^#\s*file:\s*(\S+)', content, _re.MULTILINE))
+        print(f"[PLL_SAVE] _save_artifact: path='{path}', content_len={len(content)}, markers={len(file_markers)}")
+        if len(file_markers) > 1:
+            parts = _re.split(r'^#\s*file:\s*\S+\s*\r?\n?', content, flags=_re.MULTILINE)
+            for i, marker in enumerate(file_markers):
+                sub_path = marker.group(1)
+                sub_content = parts[i + 1].strip() if i + 1 < len(parts) else ""
+                if sub_content:
+                    await self._save_artifact(project_id, sub_path, sub_content)
+            return {"path": path, "mode": "multi-split", "count": len(file_markers)}
+        # Strip single file header if present
+        content = _re.sub(r'^#\s*file:\s*\S+\s*\r?\n?', '', content, count=1)
+
         project = await self.db.get(Project, project_id)
         is_disk = bool(project and project.disk_path)
 

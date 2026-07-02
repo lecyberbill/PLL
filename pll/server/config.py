@@ -17,3 +17,7 @@ AGENTS_DIR = os.path.join(os.path.dirname(__file__), "agents")
 PROJECTS_DIR = os.path.join(os.path.dirname(__file__), "projects")
 HOST = os.getenv("PLL_HOST", "127.0.0.1")
 PORT = int(os.getenv("PLL_PORT", "8080"))
+
+# Google Custom Search
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+GOOGLE_CX = os.getenv("GOOGLE_CX", "")

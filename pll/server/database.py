@@ -16,10 +16,17 @@ class Base(DeclarativeBase):
 
 
 async def init_db():
-    """Create all tables if they don't exist (idempotent)."""
+    """Create all tables if they don't exist, run migrations."""
     from models import Project, Artifact, AgentSession, GCAVault, Package, Conversation  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Auto-migration: add source_content to packages if missing
+    try:
+        async with engine.begin() as conn:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE packages ADD COLUMN source_content TEXT DEFAULT ''"))
+    except Exception:
+        pass  # column already exists
 
 
 async def get_db() -> AsyncSession:

@@ -35,9 +35,7 @@ DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 DEEPSEEK_API_KEY = os.getenv("Dp_API_KEY", "")
 DEFAULT_BACKEND = os.getenv("PLL_LLM_BACKEND", "deepseek" if DEEPSEEK_API_KEY else "lmstudio")
 
-# ---------------------------------------------------------------------------
-# FEW-SHOT EXAMPLES — complete, correct PLL programs the model can learn from
-# ---------------------------------------------------------------------------
+# ---------- Few-shot examples ----------
 FEW_SHOT_EXAMPLES = """
 ## EXAMPLE 1: Factorial (recursion)
 ```
@@ -230,7 +228,7 @@ async def chat_completion(
     model: str = "",
     backend: str = "",
 ) -> dict:
-    """Send a chat completion request to the configured LLM backend."""
+    """Send a chat completion request to the configured LLM backend (with cache)."""
     full_messages = [{"role": "system", "content": system_prompt}] + messages
     backend = backend or DEFAULT_BACKEND
 

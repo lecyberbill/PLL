@@ -93,14 +93,17 @@ def _parse_status(out: str) -> tuple[list[str], list[str], list[str], list[str]]
             continue
         code = line[:2]
         path = line[3:].strip()
+        idx, wt = code[0], code[1] if len(code) > 1 else " "
         if code == "??":
             untracked.append(path)
-        elif code.startswith("M"):
+        elif idx == "M" or (idx == " " and wt == "M"):
             modified.append(path)
-        elif code.startswith("A") or code.startswith(" "):
+        elif idx == "A":
             staged.append(path)
-        elif code.startswith("D"):
+        elif idx == "D" or wt == "D":
             deleted.append(path)
+        elif idx == "M":
+            modified.append(path)
     return staged, modified, untracked, deleted
 
 
@@ -113,9 +116,11 @@ async def git_status(project_id: int, db: AsyncSession = Depends(get_db)):
         return GitStatusResponse()
     git_dir = _git_dir(project)
     if not (git_dir / ".git").exists():
-        return GitStatusResponse(is_repo=False)
+        _ensure_repo(git_dir)
+        # After init, proceed to read status (repo is fresh, so empty)
 
     branch = _git("rev-parse", "--abbrev-ref", "HEAD", cwd=git_dir)
+    branch_name = branch.get("out", "") if branch["ok"] else "main"
     status = _git("status", "--porcelain", cwd=git_dir)
     commit_count = _git("rev-list", "--count", "HEAD", cwd=git_dir)
 
@@ -132,7 +137,7 @@ async def git_status(project_id: int, db: AsyncSession = Depends(get_db)):
                 ahead, behind = int(parts[0]), int(parts[1])
 
     return GitStatusResponse(
-        branch=branch.get("out", "main"),
+        branch=branch_name,
         is_repo=True,
         ahead=ahead,
         behind=behind,

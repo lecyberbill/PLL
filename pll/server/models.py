@@ -63,6 +63,7 @@ class Package(Base):
     version = Column(String(50), default="0.1.0")
     description = Column(Text, default="")
     author = Column(String(255), default="")
+    source_content = Column(Text, default="")
     entry = Column(String(1024), default="lib.pll")
     downloads = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

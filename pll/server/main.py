@@ -80,7 +80,10 @@ async def serve_static(full_path: str):
     if not file_path.startswith(PLAYGROUND):
         return JSONResponse({"detail": "Forbidden"}, status_code=403)
     if os.path.isfile(file_path):
-        return FileResponse(file_path)
+        ext = os.path.splitext(full_path)[1].lower()
+        media_type = {"ttf": "font/ttf", "woff": "font/woff", "woff2": "font/woff2",
+                      "otf": "font/otf", "eot": "application/vnd.ms-fontobject"}.get(ext)
+        return FileResponse(file_path, media_type=media_type)
     index_path = os.path.join(PLAYGROUND, "index.html")
     if os.path.isfile(index_path):
         return FileResponse(index_path)

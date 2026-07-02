@@ -12,21 +12,22 @@ from services.llm_proxy import chat_completion
 from services.agent_react import AgentReAct
 
 PLL_PLANNER_SYSTEM = """
-You are a PLL planning agent. Write a PLL program that decomposes the user's
-request into independent subtasks. Output ONLY a PLL variable declaration
-containing a list of subtask records:
+You are a PLL planning agent. Decompose the user's request into subtasks.
+Output ONLY a PLL variable declaration containing a list of subtask records,
+with EXACTLY ONE file per subtask:
 
 v subtasks != [
-    {description: "what to do", file: "target_file.py"},
-    {description: "another task", file: "other.py"}
+    {description: "what to do", file: "path/to/file.ts"},
+    {description: "another task", file: "path/to/other.ts"}
 ]
 
 Rules:
-- Each subtask produces one file (or a small set of files)
-- Descriptions are concise (1 sentence max)
-- max 5 subtasks
-- Output ONLY the PLL code, no markdown, no explanations
-- If the task is simple (1 file), return a single-element list
+- ONE file per subtask — never bundle multiple files together.
+- File paths are relative to project root (e.g. src/app/page.tsx, NOT project-name/src/...)
+- Max 12 subtasks.
+- Descriptions are concise (1 sentence max).
+- Output ONLY the PLL code, no markdown, no explanations.
+- If the task is simple (1 file), return a single-element list.
 """
 
 
@@ -43,17 +44,29 @@ class AgentCoordinator:
 
         results = []
         for i, subtask in enumerate(subtasks):
-            agent = AgentReAct(self.project_id, self.backend)
+            agent = AgentReAct(self.project_id, self.backend, max_steps=20)
             prompt = (
-                f"# Subtask {i + 1}: {subtask['description']}\n"
-                f"# File: {subtask.get('file', 'unknown')}\n"
-                f"# Main task: {user_message[:200]}\n"
-                f"# Previous: {results[-1]['result'][:200] if results else 'none'}"
+                f"# Subtask {i + 1}/{len(subtasks)}: {subtask['description']}\n"
+                f"# Target file: {raw_path}\n"
+                f"# IMPORTANT: Write the file at EXACTLY this relative path (no extra directory prefix).\n"
+                f"# Main task: {user_message[:300]}\n"
+                f"# RULES:\n"
+                f"# 1. Write the COMPLETE file content in ONE edit_artifact call — never create empty files.\n"
+                f"# 2. Call final_answer when done. DO NOT continue planning.\n"
+                f"# 3. Keep it focused: just implement this one subtask.\n"
+                f"# Previous subtask result: {results[-1]['result'][:200] if results else 'none'}"
             )
             result = await agent.run(prompt, context)
+            # Sanitize file path: remove any top-level dir prefix that matches project name
+            raw_path = subtask.get("file", "")
+            parts = raw_path.replace("\\", "/").split("/")
+            if len(parts) > 1 and parts[0] not in ("src", "app", "lib", "components", "public", "."):
+                clean_path = "/".join(parts[1:])
+            else:
+                clean_path = raw_path
             results.append({
                 "subtask": subtask["description"],
-                "expected_file": subtask.get("file", ""),
+                "expected_file": clean_path,
                 "result": result.get("answer", ""),
                 "code": result.get("code", ""),
                 "file_path": result.get("file_path", ""),
@@ -61,8 +74,19 @@ class AgentCoordinator:
 
         summary_lines = []
         for r in results:
-            summary_lines.append(f"  - {r['subtask']}: {r['result'][:200]}")
+            summary_lines.append(f"  - {r['subtask']}: {r['result']}")
         summary = "\n".join(summary_lines)
+
+        # Post-generation validation: fix empty files and missing deps
+        fix_needed = await self._validate_and_fix(user_message, context)
+        if fix_needed:
+            results.append({
+                "subtask": "Fix validation issues",
+                "expected_file": "",
+                "result": fix_needed,
+                "code": "",
+                "file_path": "",
+            })
 
         return {
             "answer": f"Completed {len(results)} subtasks:\n{summary}",
@@ -70,6 +94,34 @@ class AgentCoordinator:
             "code": results[-1].get("code", "") if results else "",
             "file_path": results[-1].get("file_path", "") if results else "",
         }
+
+    async def _validate_and_fix(self, user_message: str, context: str) -> str:
+        """Check project for empty files and missing deps, fix them with a ReAct pass."""
+        from database import async_session
+        from models import Artifact
+        from sqlalchemy import select
+        import json
+
+        async with async_session() as db:
+            files = await db.execute(
+                select(Artifact).where(Artifact.project_id == self.project_id)
+            )
+            files = files.scalars().all()
+
+        empty_files = [f.path for f in files if not f.content.strip()]
+        if not empty_files:
+            return ""
+
+        agent = AgentReAct(self.project_id, self.backend, max_steps=15)
+        fix_prompt = (
+            f"The following files are EMPTY (0 bytes): {', '.join(empty_files)}\n"
+            f"Main task: {user_message[:300]}\n"
+            f"Fill each empty file with COMPLETE working content. "
+            f"If package.json is empty, add proper dependencies (next, react, react-dom, typescript, tailwindcss). "
+            f"Write ALL content in ONE edit_artifact call per file."
+        )
+        result = await agent.run(fix_prompt, context)
+        return result.get("answer", "Validation fixes applied.")
 
     async def _plan(self, user_message: str, context: str) -> list[dict]:
         ctx = f"Context:\n{context[:500]}" if context else ""
