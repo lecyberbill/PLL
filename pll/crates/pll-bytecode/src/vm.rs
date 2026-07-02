@@ -70,7 +70,7 @@ pub struct BcEnv {
     pub stack: Vec<BcValue>,
     pub vars: HashMap<String, BcValue>,
     fns: Vec<FnInfo>,
-    call_stack: Vec<(usize, HashMap<String, BcValue>)>,
+    call_stack: Vec<(usize, String, HashMap<String, BcValue>)>,
     running: bool,
 }
 
@@ -82,8 +82,16 @@ impl BcEnv {
     fn push(&mut self, val: BcValue) { self.stack.push(val); }
     pub fn pop(&mut self) -> BcValue { self.stack.pop().unwrap_or(BcValue::Nil) }
 
+    fn err(&self, msg: &str) -> String {
+        let mut trace = format!("Runtime error: {}\n", msg);
+        trace.push_str(&format!("  at bytecode offset {}\n", self.ip));
+        for (i, (addr, name, _)) in self.call_stack.iter().enumerate().rev() {
+            trace.push_str(&format!("  called from {} at offset {}\n", name, addr));
+        }
+        trace
+    }
+
     pub fn run(&mut self) -> Result<(), String> {
-        // Read FnTable offset (first 4 bytes — if valid, parse FnTable and start after header)
         let fn_offset = i32::from_le_bytes([self.code[0], self.code[1], self.code[2], self.code[3]]) as usize;
         let has_fn_table = fn_offset > 4 && fn_offset < self.code.len();
         if has_fn_table {
@@ -94,7 +102,10 @@ impl BcEnv {
                 for _ in 0..count {
                     let addr = i32::from_le_bytes([self.code[self.ip], self.code[self.ip+1], self.code[self.ip+2], self.code[self.ip+3]]) as usize;
                     self.ip += 4;
-                    self.fns.push(FnInfo { name: String::new(), params: vec![], address: addr });
+                    let name_len = self.code[self.ip] as usize; self.ip += 1;
+                    let name = std::str::from_utf8(&self.code[self.ip..self.ip + name_len]).unwrap_or("?").to_string();
+                    self.ip += name_len;
+                    self.fns.push(FnInfo { name, params: vec![], address: addr });
                 }
             }
         }
@@ -135,17 +146,23 @@ impl BcEnv {
                     else {
                         let fn_info = self.fns[fn_idx].clone();
                         let saved = self.vars.clone();
-                        self.call_stack.push((self.ip, saved));
-                        // Args stay on stack — function body starts with StoreVar to consume them
+                        let fn_name = fn_info.name.clone();
+                        self.call_stack.push((self.ip, fn_name, saved));
                         self.ip = fn_info.address;
                     }
                 }
                 Some(Opcode::Ret) => {
                     let ret_val = self.pop();
-                    if let Some((ip, saved)) = self.call_stack.pop() { self.vars = saved; self.ip = ip; self.push(ret_val); }
-                    else { self.push(ret_val); self.running = false; }
+                    if let Some((ip, _, saved)) = self.call_stack.pop() {
+                        self.vars = saved;
+                        self.ip = ip;
+                        self.push(ret_val);
+                    } else {
+                        self.push(ret_val);
+                        self.running = false;
+                    }
                 }
-                Some(Opcode::Builtin) => { let id = self.code[self.ip]; self.ip += 1; self.exec_builtin(id)?; }
+                Some(Opcode::Builtin) => { let id = self.code[self.ip]; self.ip += 1; if let Err(e) = self.exec_builtin(id) { return Err(self.err(&e)); } }
                 Some(Opcode::ListNew) => { self.push(BcValue::List(Arc::new(Vec::new()))); }
                 Some(Opcode::ListPush) => { let item = self.pop(); let mut items = if let BcValue::List(list) = self.pop() { (*list).clone() } else { vec![] }; items.push(item); self.push(BcValue::List(Arc::new(items))); }
                 Some(Opcode::ListGet) => { let idx = self.pop().as_num().unwrap_or(0.0) as usize; if let BcValue::List(items) = self.pop() { self.push(items.get(idx).cloned().unwrap_or(BcValue::Nil)); } else { self.push(BcValue::Nil); } }
@@ -155,7 +172,7 @@ impl BcEnv {
                 Some(Opcode::Field) => { let field = self.pop().to_string(); if let BcValue::Record(map) = self.pop() { self.push(map.get(&field).cloned().unwrap_or(BcValue::Nil)); } else { self.push(BcValue::Nil); } }
                 Some(Opcode::FnTable) => {}
                 Some(Opcode::Halt) => { self.running = false; }
-                None => return Err(format!("Unknown opcode {}", opcode)),
+                None => return Err(self.err(&format!("Unknown opcode {}", opcode))),
             }
         }
         Ok(())
@@ -171,7 +188,7 @@ impl BcEnv {
             BUILTIN_STR_CONCAT => { let b = self.pop().to_string(); let a = self.pop().to_string(); self.push(BcValue::Str(format!("{}{}", a, b))); }
             BUILTIN_STR_LENGTH => { let s = self.pop().to_string(); self.push(BcValue::Num(s.chars().count() as f64)); }
             BUILTIN_STR_SLICE => { let end = self.pop().as_num().unwrap_or(0.0); let start = self.pop().as_num().unwrap_or(0.0); let s = self.pop().to_string(); self.push(BcValue::Str(pll_runtime::str_slice(&s, start, end))); }
-            BUILTIN_STR_CHAR_AT => { let i = self.pop().as_num().unwrap_or(0.0); let s = self.pop().to_string(); let c = s.chars().nth(i as usize).map(|c| c.to_string()).unwrap_or_default(); self.push(BcValue::Str(c)); }
+            BUILTIN_STR_CHAR_AT => { let i = self.pop().as_num().unwrap_or(0.0); let s = self.pop().to_string(); self.push(BcValue::Str(s.chars().nth(i as usize).map(|c| c.to_string()).unwrap_or_default())); }
             BUILTIN_STR_TO_NUM => { let s = self.pop().to_string(); self.push(BcValue::Num(pll_runtime::str_to_num(&s))); }
             BUILTIN_STR_FROM_NUM => { let n = self.pop().as_num().unwrap_or(0.0); self.push(BcValue::Str(pll_runtime::str_from_num(n))); }
             BUILTIN_STR_STARTS_WITH => { let p = self.pop().to_string(); let s = self.pop().to_string(); self.push(BcValue::Bool(pll_runtime::str_starts_with(&s, &p))); }

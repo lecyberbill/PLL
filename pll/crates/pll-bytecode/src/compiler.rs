@@ -37,7 +37,10 @@ impl Compiler {
         self.bytecode.push(Opcode::FnTable as u8);
         self.bytecode.push(fn_decls.len() as u8);
         let addr_table_pos = self.bytecode.len();
-        for _ in &fn_decls { self.bytecode.extend_from_slice(&[0; 4]); }
+        // Addresses + names
+        for _ in &fn_decls { self.bytecode.extend_from_slice(&[0; 4]); } // addresses
+        let name_table_pos = self.bytecode.len();
+        for f in &fn_decls { self.emit_push_str(&f.name); } // names
         let mut fn_addrs = Vec::new();
         for f in &fn_decls {
             let addr = self.bytecode.len();
