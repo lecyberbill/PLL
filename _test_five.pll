@@ -1,0 +1,8 @@
+fn five(x: num) -> num:
+    return 5
+
+fn call(x: num) -> num:
+    return five(five(x))
+
+v r != call(0)
+render r

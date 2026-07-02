@@ -1,0 +1,8 @@
+fn ident(x: num) -> num:
+    return x
+
+fn call_ident(x: num) -> num:
+    return ident(ident(x))
+
+v r != call_ident(5)
+render r

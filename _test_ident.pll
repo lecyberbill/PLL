@@ -1,0 +1,6 @@
+fn ident(x: num) -> num:
+    return x
+
+v inner != ident(5)
+v outer != ident(inner)
+render outer

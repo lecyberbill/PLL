@@ -1,0 +1,7 @@
+fn a(x: num) -> num:
+    return x + 1
+
+v inner != a(5)
+v outer != a(inner)
+render inner
+render outer

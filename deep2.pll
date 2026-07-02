@@ -1,0 +1,12 @@
+fn a(x: num) -> num:
+    return x + 1
+
+fn b(x: num) -> num:
+    v inner != a(x)
+    render inner
+    v outer != a(inner)
+    render outer
+    return outer
+
+v r != b(5)
+render r

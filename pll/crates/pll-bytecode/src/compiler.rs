@@ -25,34 +25,41 @@ impl Compiler {
         for stmt in &program.statements {
             if let Stmt::FnDecl(f) = &stmt.value { fn_decls.push(f.clone()); }
         }
-        // FnTable offset placeholder (4 bytes at start)
+        for f in &fn_decls {
+            self.fns.push(FnInfo {
+                name: f.name.clone(),
+                params: f.params.iter().map(|p| p.name.clone()).collect(),
+                address: 0,
+            });
+        }
         self.bytecode.extend_from_slice(&[0; 4]);
-        // Main body (all non-fn statements)
         for stmt in &program.statements {
             match &stmt.value { Stmt::FnDecl(_) => {} _ => self.compile_stmt(stmt), }
         }
         self.bytecode.push(Opcode::Halt as u8);
-        // FnTable at end
         let fn_table_start = self.bytecode.len();
         self.bytecode.push(Opcode::FnTable as u8);
         self.bytecode.push(fn_decls.len() as u8);
-        let addr_table_pos = self.bytecode.len();
-        // Addresses + names
-        for _ in &fn_decls { self.bytecode.extend_from_slice(&[0; 4]); } // addresses
-        let name_table_pos = self.bytecode.len();
-        for f in &fn_decls { self.emit_push_str(&f.name); } // names
-        let mut fn_addrs = Vec::new();
+        let mut fn_addr_positions = Vec::new();
         for f in &fn_decls {
+            fn_addr_positions.push(self.bytecode.len());
+            self.bytecode.extend_from_slice(&[0; 4]);
+            let name_bytes = f.name.as_bytes();
+            self.bytecode.push(name_bytes.len() as u8);
+            self.bytecode.extend_from_slice(name_bytes);
+        }
+        let mut fn_addrs = Vec::new();
+        for (i, f) in fn_decls.iter().enumerate() {
             let addr = self.bytecode.len();
             fn_addrs.push(addr);
-            self.fns.push(FnInfo { name: f.name.clone(), params: f.params.iter().map(|p| p.name.clone()).collect(), address: addr });
+            self.fns[i].address = addr;
             self.vars.clear();
             for p in &f.params { self.emit_store_var(&p.name); self.vars.insert(p.name.clone(), 0); }
             for s in &f.body { self.compile_stmt(s); }
             self.bytecode.push(Opcode::Ret as u8);
         }
         for (i, addr) in fn_addrs.iter().enumerate() {
-            let pos = addr_table_pos + i * 4;
+            let pos = fn_addr_positions[i];
             self.bytecode[pos..pos + 4].copy_from_slice(&(*addr as i32).to_le_bytes());
         }
         let offset = (fn_table_start as i32 - 0) as i32;
@@ -111,15 +118,13 @@ impl Compiler {
                 self.bytecode[jif_pos + 1..jif_pos + 3].copy_from_slice(&jif_off.to_le_bytes());
             }
             Stmt::ForEach(fe) => {
-                // foreach var in list: body
-                // compile as: store list, idx=0, while idx < len(list): var = list[idx], body, idx++
                 let list_var = "__fe_list";
                 let idx_var = "__fe_idx";
                 self.compile_expr(&fe.iter);
                 self.emit_store_var(list_var);
                 self.vars.insert(list_var.to_string(), 0);
-                self.bytecode.extend_from_slice(&[Opcode::PushNum as u8]); // PushNum
-                self.bytecode.extend_from_slice(&0.0f64.to_le_bytes()); // f64(0)
+                self.bytecode.extend_from_slice(&[Opcode::PushNum as u8]);
+                self.bytecode.extend_from_slice(&0.0f64.to_le_bytes());
                 self.emit_store_var(idx_var);
                 self.vars.insert(idx_var.to_string(), 0);
                 let loop_start = self.bytecode.len();
@@ -137,8 +142,8 @@ impl Compiler {
                 self.vars.insert(fe.var.clone(), 0);
                 for s in &fe.body { self.compile_stmt(s); }
                 self.emit_load_var(idx_var);
-                self.bytecode.extend_from_slice(&[Opcode::PushNum as u8]); // PushNum
-                self.bytecode.extend_from_slice(&1.0f64.to_le_bytes()); // f64(1)
+                self.bytecode.extend_from_slice(&[Opcode::PushNum as u8]);
+                self.bytecode.extend_from_slice(&1.0f64.to_le_bytes());
                 self.bytecode.push(Opcode::Add as u8);
                 self.emit_store_var(idx_var);
                 let jmp_off = (loop_start as i16 - self.bytecode.len() as i16 - 3) as i16;
@@ -175,7 +180,6 @@ impl Compiler {
                 self.bytecode.push(opcode as u8);
             }
             Expr::Call(name, args) => {
-                // Builtin functions (compile to Builtin opcode directly)
                 let builtin_id = match name.as_str() {
                     "render" => Some(BUILTIN_RENDER),
                     "print" => Some(BUILTIN_PRINT),
@@ -197,12 +201,11 @@ impl Compiler {
                     _ => None,
                 };
                 if let Some(id) = builtin_id {
-                    // Builtins expect args in normal order (not reversed like Call)
                     for a in args.iter() { self.compile_expr(a); }
                     self.bytecode.push(Opcode::Builtin as u8);
                     self.bytecode.push(id);
                 } else {
-                    for a in args.iter().rev() { self.compile_expr(a); }
+                    for a in args.iter() { self.compile_expr(a); }
                     self.bytecode.push(Opcode::Call as u8);
                     self.bytecode.push(args.len() as u8);
                     let fn_idx = self.fns.iter().position(|f| f.name == *name).unwrap_or(0) as u8;

@@ -1,0 +1,8 @@
+fn a(x: num) -> num:
+    return x + 1
+
+fn b(x: num) -> num:
+    return a(a(x))
+
+v r != b(5)
+render r

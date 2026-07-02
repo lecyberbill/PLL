@@ -92,6 +92,7 @@ impl BcEnv {
     }
 
     pub fn run(&mut self) -> Result<(), String> {
+        self.fns.clear(); // Clear compile-time entries, re-populate from FnTable
         let fn_offset = i32::from_le_bytes([self.code[0], self.code[1], self.code[2], self.code[3]]) as usize;
         let has_fn_table = fn_offset > 4 && fn_offset < self.code.len();
         if has_fn_table {
@@ -153,7 +154,7 @@ impl BcEnv {
                 }
                 Some(Opcode::Ret) => {
                     let ret_val = self.pop();
-                    if let Some((ip, _, saved)) = self.call_stack.pop() {
+                    if let Some((ip, name, saved)) = self.call_stack.pop() {
                         self.vars = saved;
                         self.ip = ip;
                         self.push(ret_val);

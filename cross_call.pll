@@ -1,0 +1,8 @@
+fn add_one(x: num) -> num:
+    return x + 1
+
+fn call_add(x: num) -> num:
+    return add_one(x)
+
+v r != call_add(5)
+render r

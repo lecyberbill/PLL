@@ -1,0 +1,7 @@
+fn max(a: num, b: num) -> num:
+    if a > b:
+        return a
+    return b
+
+v r != max(3, 5)
+render r
