@@ -1,8 +1,0 @@
-fn add_one(x: num) -> num:
-    return x + 1
-
-fn add_two(x: num) -> num:
-    return x + 2
-
-v r != add_one(5)
-render r

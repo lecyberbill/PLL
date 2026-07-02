@@ -1,8 +1,0 @@
-fn add(x: num) -> num:
-    return x + 1
-
-fn call(x: num) -> num:
-    return add(add(x))
-
-v r != call(5)
-render r

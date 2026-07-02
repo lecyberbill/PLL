@@ -1,7 +1,0 @@
-fn add(x: num) -> num:
-    return x + 1
-
-v r1 != add(5)
-v r2 != add(add(5))
-render r1
-render r2

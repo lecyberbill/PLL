@@ -1,7 +1,0 @@
-fn recurse(x: num) -> num:
-    if x <= 0:
-        return 0
-    return recurse(x - 1)
-
-v r != recurse(1)
-render r

@@ -1,8 +1,0 @@
-fn ident(x: num) -> num:
-    return x
-
-fn call(x: num) -> num:
-    return ident(ident(x))
-
-v r != call(5)
-render r
