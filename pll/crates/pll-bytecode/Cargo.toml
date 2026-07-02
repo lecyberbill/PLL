@@ -6,3 +6,7 @@ edition.workspace = true
 [dependencies]
 pll-core = { path = "../pll-core" }
 pll-runtime = { path = "../pll-runtime" }
+
+[dev-dependencies]
+pll-lexer = { path = "../pll-lexer" }
+pll-parser = { path = "../pll-parser" }

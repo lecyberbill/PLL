@@ -37,6 +37,8 @@ name = "pll-bytecode"
 version = "0.2.0"
 dependencies = [
  "pll-core",
+ "pll-lexer",
+ "pll-parser",
  "pll-runtime",
 ]
 

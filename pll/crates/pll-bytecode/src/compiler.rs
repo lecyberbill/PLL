@@ -1,5 +1,5 @@
 use crate::opcodes::*;
-use crate::vm::{BUILTIN_RENDER, BUILTIN_PRINT, BUILTIN_EMIT};
+use crate::vm::{BUILTIN_RENDER, BUILTIN_PRINT, BUILTIN_EMIT, BUILTIN_STR_CONCAT, BUILTIN_STR_LENGTH, BUILTIN_STR_SLICE, BUILTIN_STR_CHAR_AT, BUILTIN_STR_TO_NUM, BUILTIN_STR_FROM_NUM, BUILTIN_STR_STARTS_WITH, BUILTIN_STR_TO_UPPER, BUILTIN_LIST_LENGTH, BUILTIN_LIST_GET, BUILTIN_LIST_PUSH, BUILTIN_READ_FILE, BUILTIN_WRITE_FILE, BUILTIN_DB_SET, BUILTIN_DB_GET};
 use pll_core::*;
 
 pub struct Compiler {
@@ -134,11 +134,39 @@ impl Compiler {
                 self.bytecode.push(opcode as u8);
             }
             Expr::Call(name, args) => {
-                for a in args.iter().rev() { self.compile_expr(a); }
-                self.bytecode.push(Opcode::Call as u8);
-                self.bytecode.push(args.len() as u8);
-                let fn_idx = self.fns.iter().position(|f| f.name == *name).unwrap_or(0) as u8;
-                self.bytecode.push(fn_idx);
+                // Builtin functions (compile to Builtin opcode directly)
+                let builtin_id = match name.as_str() {
+                    "render" => Some(BUILTIN_RENDER),
+                    "print" => Some(BUILTIN_PRINT),
+                    "str_concat" => Some(BUILTIN_STR_CONCAT),
+                    "str_length" => Some(BUILTIN_STR_LENGTH),
+                    "str_slice" => Some(BUILTIN_STR_SLICE),
+                    "str_char_at" => Some(BUILTIN_STR_CHAR_AT),
+                    "str_to_num" => Some(BUILTIN_STR_TO_NUM),
+                    "str_from_num" => Some(BUILTIN_STR_FROM_NUM),
+                    "str_starts_with" => Some(BUILTIN_STR_STARTS_WITH),
+                    "str_to_upper" => Some(BUILTIN_STR_TO_UPPER),
+                    "list_length" => Some(BUILTIN_LIST_LENGTH),
+                    "list_get" => Some(BUILTIN_LIST_GET),
+                    "list_push" => Some(BUILTIN_LIST_PUSH),
+                    "read_file" => Some(BUILTIN_READ_FILE),
+                    "write_file" => Some(BUILTIN_WRITE_FILE),
+                    "db_set" => Some(BUILTIN_DB_SET),
+                    "db_read" => Some(BUILTIN_DB_GET),
+                    _ => None,
+                };
+                if let Some(id) = builtin_id {
+                    // Builtins expect args in normal order (not reversed like Call)
+                    for a in args.iter() { self.compile_expr(a); }
+                    self.bytecode.push(Opcode::Builtin as u8);
+                    self.bytecode.push(id);
+                } else {
+                    for a in args.iter().rev() { self.compile_expr(a); }
+                    self.bytecode.push(Opcode::Call as u8);
+                    self.bytecode.push(args.len() as u8);
+                    let fn_idx = self.fns.iter().position(|f| f.name == *name).unwrap_or(0) as u8;
+                    self.bytecode.push(fn_idx);
+                }
             }
             Expr::List(items) => {
                 self.bytecode.push(Opcode::ListNew as u8);

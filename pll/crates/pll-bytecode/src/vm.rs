@@ -67,7 +67,7 @@ pub struct FnInfo {
 pub struct BcEnv {
     code: Vec<u8>,
     ip: usize,
-    stack: Vec<BcValue>,
+    pub stack: Vec<BcValue>,
     pub vars: HashMap<String, BcValue>,
     fns: Vec<FnInfo>,
     call_stack: Vec<(usize, HashMap<String, BcValue>)>,
@@ -80,12 +80,13 @@ impl BcEnv {
     }
 
     fn push(&mut self, val: BcValue) { self.stack.push(val); }
-    fn pop(&mut self) -> BcValue { self.stack.pop().unwrap_or(BcValue::Nil) }
+    pub fn pop(&mut self) -> BcValue { self.stack.pop().unwrap_or(BcValue::Nil) }
 
     pub fn run(&mut self) -> Result<(), String> {
-        // Read FnTable offset (first 4 bytes point to FnTable at end of bytecode)
+        // Read FnTable offset (first 4 bytes — if valid, parse FnTable and start after header)
         let fn_offset = i32::from_le_bytes([self.code[0], self.code[1], self.code[2], self.code[3]]) as usize;
-        if fn_offset > 0 && fn_offset < self.code.len() {
+        let has_fn_table = fn_offset > 4 && fn_offset < self.code.len();
+        if has_fn_table {
             self.ip = fn_offset;
             if self.code[self.ip] == Opcode::FnTable as u8 {
                 self.ip += 1;
@@ -97,7 +98,7 @@ impl BcEnv {
                 }
             }
         }
-        self.ip = 4; // Start execution after the offset header
+        self.ip = if has_fn_table { 4 } else { 0 };
         while self.running && self.ip < self.code.len() {
             let opcode = self.code[self.ip]; self.ip += 1;
             match Opcode::from_repr(opcode) {
