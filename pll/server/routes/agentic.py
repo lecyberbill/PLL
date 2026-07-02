@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from datetime import datetime, timezone
 from database import get_db
-from models import Project as ProjectModel, Artifact
+from models import Project as ProjectModel, Artifact, Conversation
 from schemas import AgentSessionOut, ArtifactOut
 from services.agent_brain import AgentBrain
 
@@ -129,6 +129,41 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     if not project:
         raise HTTPException(404, "Project not found")
 
+    # Load conversation history (last 10 messages)
+    conv_result = await db.execute(
+        select(Conversation).where(Conversation.project_id == req.project_id)
+            .order_by(Conversation.created_at.desc()).limit(10)
+    )
+    conv_msgs = list(reversed(conv_result.scalars().all()))
+    conv_history = ""
+    if conv_msgs:
+        conv_history = "\n\n## Conversation précédente:\n" + "\n".join(
+            f"{'Utilisateur' if c.role == 'user' else 'Assistant'}: {c.content[:200]}"
+            for c in conv_msgs[-5:]
+        )
+
+    # Append history to the message
+    augmented_msg = req.message + conv_history
+
+    # Save user message + append conversation history
+    db.add(Conversation(project_id=req.project_id, role="user", content=req.message[:500]))
+    await db.commit()
+    conv_result = await db.execute(
+        select(Conversation).where(Conversation.project_id == req.project_id)
+            .order_by(Conversation.created_at.desc()).limit(10)
+    )
+    history = "\n".join(f"{'User' if c.role=='user' else 'Asst'}: {c.content[:200]}"
+                        for c in reversed(conv_result.scalars().all()))
+    if history:
+        req.message += "\n\n## Recent conversation:\n" + history
+
+    async def _respond(**kw):
+        answer = kw.get("answer") or kw.get("explanation") or kw.get("question", "")
+        if answer:
+            db.add(Conversation(project_id=req.project_id, role="assistant", content=str(answer)[:500]))
+            await db.commit()
+        return GoResponse(**kw)
+
     files_result = await db.execute(
         select(Artifact).where(Artifact.project_id == req.project_id)
     )
@@ -162,13 +197,13 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
             pending = None
         result = await brain.process_request(req.project_id, req.message, backend=req.backend)
         if result.get("explanation"):
-            return GoResponse(
+            return await _respond(
                 answer=result["explanation"],
                 explanation=result["explanation"],
                 mode="resume",
                 agent_info=result.get("agent_info", {}),
             )
-        return GoResponse(answer="Projet analysé.", mode="resume")
+        return await _respond(answer="Projet analysé.", mode="resume")
 
     if pending:
         # User is responding to a clarification question
@@ -190,7 +225,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
             agent_session.current_state = AgentBrain._pending_key(pending)
             agent_session.updated_at = datetime.now(timezone.utc)
             await db.commit()
-            return GoResponse(question=sub["question"], mode="clarify")
+            return await _respond(question=sub["question"], mode="clarify")
 
         # Clear enough — proceed with generation
         agent_session.current_state = ""
@@ -204,7 +239,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     if mode == "resume":
         result = await brain.process_request(req.project_id, req.message, backend=req.backend)
         if result.get("explanation"):
-            return GoResponse(
+            return await _respond(
                 answer=result["explanation"],
                 explanation=result["explanation"],
                 mode="resume",
@@ -219,7 +254,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
             agent_session.current_state = AgentBrain._pending_key(pending_data)
             agent_session.updated_at = datetime.now(timezone.utc)
             await db.commit()
-            return GoResponse(question=sub["question"], mode="clarify")
+            return await _respond(question=sub["question"], mode="clarify")
 
     if mode == "simple":
         target = ""
@@ -232,10 +267,10 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
             req.project_id, req.message, backend=req.backend, target_file=target
         )
         if result.get("explanation"):
-            return GoResponse(
+            return await _respond(
                 answer=result["explanation"], explanation=result["explanation"], mode="resume"
             )
-        return GoResponse(
+        return await _respond(
             answer=f"{'Edited' if result.get('edit_mode') else 'Created'} {result['file_path']}",
             code=result["code"],
             file_path=result["file_path"],
@@ -253,7 +288,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
         )
         agent = AgentReAct(req.project_id, req.backend, max_steps=15)
         result = await agent.run(req.message, context_str)
-        return GoResponse(
+        return await _respond(
             answer=result.get("answer", ""),
             code=result.get("code", ""),
             file_path=result.get("file_path", ""),
@@ -268,7 +303,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     )
     coord = AgentCoordinator(req.project_id, req.backend)
     result = await coord.orchestrate(req.message, context_str)
-    return GoResponse(
+    return await _respond(
         answer=result.get("answer", ""),
         code=result.get("code", ""),
         file_path=result.get("file_path", ""),
@@ -276,3 +311,4 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
                for s in result.get("subtasks", [])],
         mode="orchestrate",
     )
+

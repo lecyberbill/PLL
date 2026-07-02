@@ -47,6 +47,15 @@ class GCAVault(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class Conversation(Base):
+    __tablename__ = "conversations"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    role = Column(String(50), nullable=False)
+    content = Column(Text, default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class Package(Base):
     __tablename__ = "packages"
     id = Column(Integer, primary_key=True, autoincrement=True)
