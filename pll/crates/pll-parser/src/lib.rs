@@ -372,10 +372,10 @@ impl Parser {
     fn parse_block(&mut self, _ctx: &str) -> Result<Vec<Spanned<Stmt>>, ParseError> {
         let mut stmts = Vec::new();
         self.skip_newlines();
-        if matches!(self.peek(), Token::Colon) { self.advance(); }
-        self.skip_newlines();
-        while !matches!(self.peek(), Token::End) && !matches!(self.peek(), Token::Fn) && !matches!(self.peek(), Token::If) {
-            break;
+        let top_level = |t: &Token| matches!(t, Token::End | Token::Fn | Token::T | Token::V | Token::P | Token::Agent | Token::Cap | Token::Contract | Token::Import);
+        while !top_level(self.peek()) {
+            stmts.push(self.parse_stmt()?);
+            self.skip_newlines();
         }
         Ok(stmts)
     }

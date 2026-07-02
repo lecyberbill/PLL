@@ -83,16 +83,21 @@ impl BcEnv {
     fn pop(&mut self) -> BcValue { self.stack.pop().unwrap_or(BcValue::Nil) }
 
     pub fn run(&mut self) -> Result<(), String> {
-        if self.code[self.ip] == Opcode::FnTable as u8 {
-            self.ip += 1;
-            let count = self.code[self.ip] as usize;
-            self.ip += 1;
-            for _ in 0..count {
-                let addr = i32::from_le_bytes([self.code[self.ip], self.code[self.ip+1], self.code[self.ip+2], self.code[self.ip+3]]) as usize;
-                self.ip += 4;
-                self.fns.push(FnInfo { name: String::new(), params: vec![], address: addr });
+        // Read FnTable offset (first 4 bytes point to FnTable at end of bytecode)
+        let fn_offset = i32::from_le_bytes([self.code[0], self.code[1], self.code[2], self.code[3]]) as usize;
+        if fn_offset > 0 && fn_offset < self.code.len() {
+            self.ip = fn_offset;
+            if self.code[self.ip] == Opcode::FnTable as u8 {
+                self.ip += 1;
+                let count = self.code[self.ip] as usize; self.ip += 1;
+                for _ in 0..count {
+                    let addr = i32::from_le_bytes([self.code[self.ip], self.code[self.ip+1], self.code[self.ip+2], self.code[self.ip+3]]) as usize;
+                    self.ip += 4;
+                    self.fns.push(FnInfo { name: String::new(), params: vec![], address: addr });
+                }
             }
         }
+        self.ip = 4; // Start execution after the offset header
         while self.running && self.ip < self.code.len() {
             let opcode = self.code[self.ip]; self.ip += 1;
             match Opcode::from_repr(opcode) {
@@ -127,14 +132,10 @@ impl BcEnv {
                     let fn_idx = self.code[self.ip] as usize; self.ip += 1;
                     if fn_idx >= self.fns.len() { for _ in 0..argc { self.pop(); } self.push(BcValue::Nil); }
                     else {
-                        let ip_now = self.ip;
                         let fn_info = self.fns[fn_idx].clone();
                         let saved = self.vars.clone();
-                        let mut call_args = Vec::new();
-                        for _ in 0..argc { call_args.push(self.pop()); }
-                        call_args.reverse();
-                        self.call_stack.push((ip_now, saved));
-                        for (i, param) in fn_info.params.iter().enumerate() { if i < call_args.len() { self.vars.insert(param.clone(), call_args[i].clone()); } }
+                        self.call_stack.push((self.ip, saved));
+                        // Args stay on stack — function body starts with StoreVar to consume them
                         self.ip = fn_info.address;
                     }
                 }

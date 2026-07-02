@@ -143,7 +143,11 @@ fn cmd_run(file: &str, pll_args: &[String]) -> ExitCode {
     let source = match read_source(file) { Ok(s) => s, Err(e) => { eprintln!("{}", e); return ExitCode::FAILURE; } };
     let program = match parse(&source) { Ok(p) => p, Err(e) => { eprintln!("{}", e); return ExitCode::FAILURE; } };
     if let Err(e) = type_check(&program) { eprintln!("{}", e); }
-    match pll_vm::run_program(&program, &mut pll_vm::Environment::new()) {
+    let mut compiler = pll_bytecode::Compiler::new();
+    compiler.compile_program(&program);
+    let bc = compiler.into_bytecode();
+    let mut env = pll_bytecode::BcEnv::new(bc);
+    match env.run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => { eprintln!("Runtime error: {}", e); ExitCode::FAILURE }
     }
@@ -166,7 +170,6 @@ fn cmd_run_bc(file: &str, pll_args: &[String]) -> ExitCode {
 
 fn cmd_repl() -> ExitCode {
     use std::io::{stdin, BufRead};
-    let mut env = pll_vm::Environment::new();
     eprintln!("PLL v2 REPL — type .exit to quit");
     let mut buffer = String::new();
     loop {
@@ -178,7 +181,13 @@ fn cmd_repl() -> ExitCode {
         if trimmed.is_empty() || trimmed.starts_with('#') { continue; }
         buffer.push_str(&line);
         match parse(&buffer) {
-            Ok(program) => { if let Err(e) = pll_vm::run_program(&program, &mut env) { eprintln!("Error: {}", e); } buffer.clear(); }
+            Ok(program) => {
+                let mut compiler = pll_bytecode::Compiler::new();
+                compiler.compile_program(&program);
+                let mut env = pll_bytecode::BcEnv::new(compiler.into_bytecode());
+                if let Err(e) = env.run() { eprintln!("Error: {}", e); }
+                buffer.clear();
+            }
             Err(e) => { if e.contains("end of file") { continue; } eprintln!("{}", e); buffer.clear(); }
         }
     }

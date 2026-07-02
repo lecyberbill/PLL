@@ -21,74 +21,50 @@ impl Compiler {
     }
 
     pub fn compile_program(&mut self, program: &Program) {
-        // First pass: collect function declarations
         let mut fn_decls = Vec::new();
         for stmt in &program.statements {
-            if let Stmt::FnDecl(f) = &stmt.value {
-                fn_decls.push(f.clone());
-            }
+            if let Stmt::FnDecl(f) = &stmt.value { fn_decls.push(f.clone()); }
         }
-        // Reserve function table space
+        // FnTable offset placeholder (4 bytes at start)
+        self.bytecode.extend_from_slice(&[0; 4]);
+        // Main body (all non-fn statements)
+        for stmt in &program.statements {
+            match &stmt.value { Stmt::FnDecl(_) => {} _ => self.compile_stmt(stmt), }
+        }
+        self.bytecode.push(Opcode::Halt as u8);
+        // FnTable at end
+        let fn_table_start = self.bytecode.len();
         self.bytecode.push(Opcode::FnTable as u8);
         self.bytecode.push(fn_decls.len() as u8);
-        let fn_table_pos = self.bytecode.len();
-        // Placeholder addresses
-        for _ in &fn_decls {
-            self.bytecode.extend_from_slice(&[0; 4]);
-        }
-        // Compile function bodies
+        let addr_table_pos = self.bytecode.len();
+        for _ in &fn_decls { self.bytecode.extend_from_slice(&[0; 4]); }
         let mut fn_addrs = Vec::new();
         for f in &fn_decls {
             let addr = self.bytecode.len();
             fn_addrs.push(addr);
-            // Register function in fn table for Call resolution
-            self.fns.push(FnInfo {
-                name: f.name.clone(),
-                params: f.params.iter().map(|p| p.name.clone()).collect(),
-                address: addr,
-            });
+            self.fns.push(FnInfo { name: f.name.clone(), params: f.params.iter().map(|p| p.name.clone()).collect(), address: addr });
             self.vars.clear();
-            for p in &f.params {
-                let var_idx = self.vars.len() as u16;
-                self.vars.insert(p.name.clone(), var_idx);
-            }
-            for s in &f.body {
-                self.compile_stmt(s);
-            }
+            for p in &f.params { self.emit_store_var(&p.name); self.vars.insert(p.name.clone(), 0); }
+            for s in &f.body { self.compile_stmt(s); }
             self.bytecode.push(Opcode::Ret as u8);
         }
-        // Patch function addresses
         for (i, addr) in fn_addrs.iter().enumerate() {
-            let pos = fn_table_pos + i * 4;
-            let bytes = (*addr as i32).to_le_bytes();
-            self.bytecode[pos..pos + 4].copy_from_slice(&bytes);
+            let pos = addr_table_pos + i * 4;
+            self.bytecode[pos..pos + 4].copy_from_slice(&(*addr as i32).to_le_bytes());
         }
-        // Compile main body
-        for stmt in &program.statements {
-            match &stmt.value {
-                Stmt::FnDecl(_) => {}
-                _ => self.compile_stmt(stmt),
-            }
-        }
-        self.bytecode.push(Opcode::Halt as u8);
+        let offset = (fn_table_start as i32 - 0) as i32;
+        self.bytecode[0..4].copy_from_slice(&offset.to_le_bytes());
     }
 
     fn compile_stmt(&mut self, stmt: &Spanned<Stmt>) {
         match &stmt.value {
             Stmt::VarDecl(v) => {
-                if let Some(init) = &v.init {
-                    self.compile_expr(init);
-                } else {
-                    self.bytecode.push(Opcode::PushNil as u8);
-                }
+                if let Some(init) = &v.init { self.compile_expr(init); } else { self.bytecode.push(Opcode::PushNil as u8); }
                 let idx = self.vars.len() as u16;
                 self.vars.insert(v.name.clone(), idx);
                 self.emit_store_var(&v.name);
             }
-            Stmt::Assign { name, value } => {
-                self.compile_expr(value);
-                self.emit_store_var(name);
-            }
+            Stmt::Assign { name, value } => { self.compile_expr(value); self.emit_store_var(name); }
             Stmt::Render(e) => { self.compile_expr(e); self.bytecode.extend_from_slice(&[Opcode::Builtin as u8, BUILTIN_RENDER]); }
             Stmt::Print(e) => { self.compile_expr(e); self.bytecode.extend_from_slice(&[Opcode::Builtin as u8, BUILTIN_PRINT]); }
             Stmt::Emit(e) => { self.compile_expr(e); self.bytecode.extend_from_slice(&[Opcode::Builtin as u8, BUILTIN_EMIT]); }
@@ -106,15 +82,15 @@ impl Compiler {
                     self.bytecode.extend_from_slice(&[0; 2]);
                     let else_start = self.bytecode.len();
                     if let Some(el) = &i.else_body { for s in el { self.compile_stmt(s); } }
-                    let else_end = self.bytecode.len();
+                    let after = self.bytecode.len();
                     let jif_offset = (else_start as i16 - jif_pos as i16 - 3) as i16;
                     self.bytecode[jif_pos + 1..jif_pos + 3].copy_from_slice(&jif_offset.to_le_bytes());
-                    let jmp_offset = (else_end as i16 - jmp_pos as i16 - 3) as i16;
-                    self.bytecode[jmp_pos + 1..jmp_pos + 3].copy_from_slice(&jmp_offset.to_le_bytes());
+                    let jmp_off = (after as i16 - jmp_pos as i16 - 3) as i16;
+                    self.bytecode[jmp_pos + 1..jmp_pos + 3].copy_from_slice(&jmp_off.to_le_bytes());
                 } else {
                     let after = self.bytecode.len();
-                    let jif_offset = (after as i16 - jif_pos as i16 - 3) as i16;
-                    self.bytecode[jif_pos + 1..jif_pos + 3].copy_from_slice(&jif_offset.to_le_bytes());
+                    let jif_off = (after as i16 - jif_pos as i16 - 3) as i16;
+                    self.bytecode[jif_pos + 1..jif_pos + 3].copy_from_slice(&jif_off.to_le_bytes());
                 }
             }
             Stmt::While(w) => {
@@ -124,12 +100,12 @@ impl Compiler {
                 self.bytecode.push(Opcode::Jif as u8);
                 self.bytecode.extend_from_slice(&[0; 2]);
                 for s in &w.body { self.compile_stmt(s); }
-                let jmp_offset = (loop_start as i16 - self.bytecode.len() as i16 - 3) as i16;
+                let jmp_off = (loop_start as i16 - self.bytecode.len() as i16 - 3) as i16;
                 self.bytecode.push(Opcode::Jmp as u8);
-                self.bytecode.extend_from_slice(&jmp_offset.to_le_bytes());
+                self.bytecode.extend_from_slice(&jmp_off.to_le_bytes());
                 let after = self.bytecode.len();
-                let jif_offset = (after as i16 - jif_pos as i16 - 3) as i16;
-                self.bytecode[jif_pos + 1..jif_pos + 3].copy_from_slice(&jif_offset.to_le_bytes());
+                let jif_off = (after as i16 - jif_pos as i16 - 3) as i16;
+                self.bytecode[jif_pos + 1..jif_pos + 3].copy_from_slice(&jif_off.to_le_bytes());
             }
             _ => {}
         }
@@ -145,8 +121,7 @@ impl Compiler {
             },
             Expr::Ident(name) => { self.emit_load_var(name); }
             Expr::Binary(op, left, right) => {
-                self.compile_expr(left);
-                self.compile_expr(right);
+                self.compile_expr(left); self.compile_expr(right);
                 let opcode = match op {
                     BinaryOp::Add => Opcode::Add, BinaryOp::Sub => Opcode::Sub,
                     BinaryOp::Mul => Opcode::Mul, BinaryOp::Div => Opcode::Div,
@@ -171,23 +146,12 @@ impl Compiler {
             }
             Expr::Record(_, fields) => {
                 self.bytecode.push(Opcode::RecordNew as u8);
-                for (k, v) in fields {
-                    self.compile_expr(v);
-                    self.emit_push_str(k);
-                    self.bytecode.push(Opcode::RecordSet as u8);
-                }
+                for (k, v) in fields { self.compile_expr(v); self.emit_push_str(k); self.bytecode.push(Opcode::RecordSet as u8); }
             }
-            Expr::Member(obj, field) => {
-                self.compile_expr(obj);
-                self.emit_push_str(field);
-                self.bytecode.push(Opcode::Field as u8);
-            }
+            Expr::Member(obj, field) => { self.compile_expr(obj); self.emit_push_str(field); self.bytecode.push(Opcode::Field as u8); }
             Expr::Unary(op, expr) => {
                 self.compile_expr(expr);
-                match op {
-                    UnaryOp::Not => self.bytecode.push(Opcode::Not as u8),
-                    UnaryOp::Neg => { self.bytecode.push(Opcode::PushNum as u8); self.bytecode.extend_from_slice(&(-1.0f64).to_le_bytes()); self.bytecode.push(Opcode::Mul as u8); }
-                }
+                match op { UnaryOp::Not => self.bytecode.push(Opcode::Not as u8), UnaryOp::Neg => { self.bytecode.push(Opcode::PushNum as u8); self.bytecode.extend_from_slice(&(-1.0f64).to_le_bytes()); self.bytecode.push(Opcode::Mul as u8); } }
             }
             _ => { self.bytecode.push(Opcode::PushNil as u8); }
         }

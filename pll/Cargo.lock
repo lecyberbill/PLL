@@ -51,7 +51,6 @@ dependencies = [
  "pll-parser",
  "pll-runtime",
  "pll-typeck",
- "pll-vm",
  "pll-wire",
  "serde",
  "serde_json",
@@ -96,14 +95,6 @@ name = "pll-typeck"
 version = "0.2.0"
 dependencies = [
  "pll-core",
-]
-
-[[package]]
-name = "pll-vm"
-version = "0.2.0"
-dependencies = [
- "pll-core",
- "pll-runtime",
 ]
 
 [[package]]
