@@ -1,4 +1,5 @@
 use crate::opcodes::*;
+use crate::vm::{BUILTIN_RENDER, BUILTIN_PRINT, BUILTIN_EMIT};
 use pll_core::*;
 
 pub struct Compiler {
@@ -88,9 +89,9 @@ impl Compiler {
                 self.compile_expr(value);
                 self.emit_store_var(name);
             }
-            Stmt::Render(e) => { self.compile_expr(e); self.bytecode.extend_from_slice(&[Opcode::Builtin as u8, 2]); }
-            Stmt::Print(e) => { self.compile_expr(e); self.bytecode.extend_from_slice(&[Opcode::Builtin as u8, 6]); }
-            Stmt::Emit(e) => { self.compile_expr(e); self.bytecode.extend_from_slice(&[Opcode::Builtin as u8, 1]); }
+            Stmt::Render(e) => { self.compile_expr(e); self.bytecode.extend_from_slice(&[Opcode::Builtin as u8, BUILTIN_RENDER]); }
+            Stmt::Print(e) => { self.compile_expr(e); self.bytecode.extend_from_slice(&[Opcode::Builtin as u8, BUILTIN_PRINT]); }
+            Stmt::Emit(e) => { self.compile_expr(e); self.bytecode.extend_from_slice(&[Opcode::Builtin as u8, BUILTIN_EMIT]); }
             Stmt::Return(e) => { self.compile_expr(e); self.bytecode.push(Opcode::Ret as u8); }
             Stmt::Expr(e) => { self.compile_expr(e); self.bytecode.push(Opcode::Pop as u8); }
             Stmt::If(i) => {
