@@ -34,6 +34,8 @@ def _git(*args, cwd: Path) -> dict:
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
         return {"ok": r.returncode == 0, "out": r.stdout.strip(), "err": r.stderr.strip()}

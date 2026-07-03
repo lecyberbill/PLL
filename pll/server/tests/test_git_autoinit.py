@@ -2,7 +2,7 @@
 import os, subprocess, tempfile
 
 def _git(*args, cwd):
-    r = subprocess.run(["git"] + list(args), cwd=cwd, capture_output=True, text=True, timeout=30)
+    r = subprocess.run(["git"] + list(args), cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
     return {"ok": r.returncode == 0, "out": r.stdout.strip(), "err": r.stderr.strip()}
 
 def _ensure_repo(git_dir):

@@ -1,15 +1,10 @@
 """
-Agent ReAct — PLL-powered reasoning loop.
-
-The agent thinks in PLL (concise inter-agent language)
-and calls tools via JSON. Format per message:
-
-    v task != ?("Break down: ...") => TaskList
-    {"tool": "edit_artifact", "args": {"path": "app.py", "content": "..."}}
+[WFGY] Zone: SAFE | λ: 0.2 | Fallbacks: 2/AST Parsing Error Fallback, XML Fallback | Action: Migrate tool calling from JSON to pure PLL function calls with XML fallback
 """
 import json
 import re
 import asyncio
+import ast
 from services.llm_proxy import chat_completion
 
 PLL_QUICK_REF = """
@@ -18,77 +13,158 @@ PLL_QUICK_REF = """
 ### Variables & Beliefs
 v name != "value"                     # declare variable
 v plan != ?("Break down: ...") => list  # LLM belief/thought
-v code != user_message => "Python"      # semantic transform
 
-### Control flow (colon + newline + indent)
-if condition:
-    v next != ?("analyze result")
-
-### Semantic operators
-v score != a ~ b                       # similarity (0.0-1.0)
-v clean != code => "Fix syntax errors"  # LLM transform
-
-### JSON tool call (always after PLL thinking lines)
-{"tool": "edit_artifact", "args": {"path": "app.py", "content": "..."}}
+### Tool calls (function call syntax)
+read_file("app.py")                   # read a file
+write_file("app.py", "content")       # write a file
+list_dir(".")                         # list directory
+exec_shell("npm install")             # run a command
+probe_path("D:\\folder")             # check if path exists
 """
+
+def parse_write_file_fallback(call_str: str) -> dict | None:
+    import re
+    call_str_clean = call_str.strip()
+    # Try triple double quotes first
+    m = re.match(r'^write_file\s*\(\s*["\']([^"\']+)["\']\s*,\s*"""([\s\S]*?)"""\s*\)', call_str_clean)
+    if m:
+        return {"tool": "write_file", "args_list": [m.group(1), m.group(2)]}
+    # Try triple single quotes
+    m = re.match(r'^write_file\s*\(\s*["\']([^"\']+)["\']\s*,\s*\'\'\'([\s\S]*?)\'\'\'\s*\)', call_str_clean)
+    if m:
+        return {"tool": "write_file", "args_list": [m.group(1), m.group(2)]}
+    # Try normal double quotes
+    m = re.match(r'^write_file\s*\(\s*["\']([^"\']+)["\']\s*,\s*"([\s\S]*?)"\s*\)', call_str_clean)
+    if m:
+        return {"tool": "write_file", "args_list": [m.group(1), m.group(2)]}
+    # Try normal single quotes
+    m = re.match(r'^write_file\s*\(\s*["\']([^"\']+)["\']\s*,\s*\'([\s\S]*?)\'\s*\)', call_str_clean)
+    if m:
+        return {"tool": "write_file", "args_list": [m.group(1), m.group(2)]}
+    return None
+
+def parse_pll_call(call_str: str) -> dict | None:
+    call_str_clean = call_str.strip()
+    try:
+        tree = ast.parse(call_str_clean)
+        if not tree.body:
+            return None
+        node = tree.body[0]
+        call_node = None
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+            call_node = node.value
+        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            call_node = node.value
+        elif isinstance(node, ast.Compare) and isinstance(node.left, ast.Name) and isinstance(node.comparators[0], ast.Call):
+            call_node = node.comparators[0]
+        
+        if not call_node:
+            for subnode in ast.walk(node):
+                if isinstance(subnode, ast.Call):
+                    call_node = subnode
+                    break
+                    
+        if call_node and isinstance(call_node.func, ast.Name):
+            tool_name = call_node.func.id
+            args_list = []
+            for arg in call_node.args:
+                if isinstance(arg, ast.Constant):
+                    args_list.append(arg.value)
+                elif isinstance(arg, ast.Str):
+                    args_list.append(arg.s)
+                elif isinstance(arg, ast.Num):
+                    args_list.append(arg.n)
+                else:
+                    args_list.append(ast.unparse(arg) if hasattr(ast, 'unparse') else str(arg))
+            return {"tool": tool_name, "args_list": args_list}
+    except Exception:
+        if call_str_clean.startswith("write_file"):
+            parsed = parse_write_file_fallback(call_str_clean)
+            if parsed:
+                return parsed
+        return None
+
+def map_args(tool: str, args_list: list) -> dict:
+    args = {}
+    if tool == "write_file":
+        if len(args_list) >= 1: args["path"] = args_list[0]
+        if len(args_list) >= 2: args["content"] = args_list[1]
+    elif tool in ("read_file", "delete_file", "list_dir", "probe_path"):
+        if len(args_list) >= 1: args["path"] = args_list[0]
+    elif tool == "glob_files":
+        if len(args_list) >= 1: args["pattern"] = args_list[0]
+        if len(args_list) >= 2: args["path"] = args_list[1]
+    elif tool == "grep_files":
+        if len(args_list) >= 1: args["pattern"] = args_list[0]
+        if len(args_list) >= 2: args["path"] = args_list[1]
+        if len(args_list) >= 3: args["include"] = args_list[2]
+    elif tool == "exec_shell":
+        if len(args_list) >= 1: args["cmd"] = args_list[0]
+    elif tool == "web_fetch":
+        if len(args_list) >= 1: args["url"] = args_list[0]
+    elif tool == "web_search":
+        if len(args_list) >= 1: args["query"] = args_list[0]
+    elif tool == "final_answer":
+        if len(args_list) >= 1: args["text"] = args_list[0]
+    elif tool == "rename_file":
+        if len(args_list) >= 1: args["old_path"] = args_list[0]
+        if len(args_list) >= 2: args["new_path"] = args_list[1]
+    elif tool == "zip_project":
+        if len(args_list) >= 1: args["output"] = args_list[0]
+    return args
 
 TOOL_DESCRIPTIONS = f"""
 {PLL_QUICK_REF}
 
 ## Tools
 
-### write_file
-Create or overwrite a file with full content.
-{{"tool": "write_file", "args": {{"path": "src/app/page.tsx", "content": "..."}}}}
+### write_file(path, content)
+Create or overwrite a file with full content. Use triple quotes for multi-line content.
+write_file("src/app/page.tsx", "content...")
+# or with triple quotes:
+write_file("src/app/page.tsx", \"\"\"
+complete content
+\"\"\")
 
-### read_file
+### read_file(path)
 Read a file from the project.
-{{"tool": "read_file", "args": {{"path": "relative/path"}}}}
+read_file("relative/path")
 
-### delete_file
+### delete_file(path)
 Delete a file.
-{{"tool": "delete_file", "args": {{"path": "relative/path"}}}}
+delete_file("relative/path")
 
-### list_dir
+### list_dir(path)
 List directory contents.
-{{"tool": "list_dir", "args": {{"path": "."}}}}
+list_dir(".")
 
-### glob_files
+### glob_files(pattern, path)
 Find files matching a glob pattern.
-{{"tool": "glob_files", "args": {{"pattern": "**/*.ts", "path": "."}}}}
+glob_files("**/*.ts", ".")
 
-### grep_files
+### grep_files(pattern, path, include)
 Search file contents with regex.
-{{"tool": "grep_files", "args": {{"pattern": "class ", "path": ".", "include": "*.ts"}}}}
+grep_files("class ", ".", "*.ts")
 
-### exec_shell
+### exec_shell(cmd)
 Execute a shell command (git, npm, etc.).
-{{"tool": "exec_shell", "args": {{"cmd": "npm install"}}}}
+exec_shell("npm install")
 
-### probe_path
-Check if a file or directory exists on the filesystem. Accepts absolute paths (C:\...) or relative paths.
-{{"tool": "probe_path", "args": {{"path": "D:\\project\\src"}}}}
+### probe_path(path)
+Check if a file or directory exists.
+probe_path("D:\\\\project\\\\src")
 
-### git_status
-Check git status.
-
-### git_commit
-Stage all and commit with a message.
-
-### git_init
-Initialize git repo for this project.
-
-### web_fetch
+### web_fetch(url)
 Fetch a URL and return content.
-{{"tool": "web_fetch", "args": {{"url": "https://..."}}}}
+web_fetch("https://...")
 
-### web_search
+### web_search(query)
 Search the web.
-{{"tool": "web_search", "args": {{"query": "..."}}}}
+web_search("query...")
 
-### final_answer
+### final_answer(text)
 Call this when the task is complete.
-{{"tool": "final_answer", "args": {{"text": "Done."}}}}
+final_answer("Done.")
 """
 
 
@@ -131,32 +207,96 @@ class AgentReAct:
 
     @staticmethod
     def _parse_tool_calls(text: str) -> list[dict]:
-        """Parse ALL JSON tool calls from text. Returns list of {tool, args} dicts."""
+        """Parse ALL PLL function calls or XML tool calls from text. Returns list of {tool, args} dicts."""
         calls = []
-        text = text.strip().strip("`").strip()
-        start = 0
-        while True:
-            start = text.find('{', start)
-            if start < 0:
+        known_tools = {
+            "write_file", "read_file", "delete_file", "list_dir", "glob_files", 
+            "grep_files", "exec_shell", "probe_path", "web_fetch", "web_search", 
+            "final_answer", "rename_file", "zip_project"
+        }
+
+        # Fallback: Parse XML-style tool calls (e.g. from DeepSeek or internal formats)
+        if "<tool_call>" in text:
+            import re as _re
+            pattern = _re.compile(r'<tool_call>(.*?)</tool_call>', _re.DOTALL)
+            for match in pattern.finditer(text):
+                block = match.group(1)
+                name_match = _re.search(r'<tool_name>(.*?)</tool_name>', block)
+                if not name_match:
+                    continue
+                tool_name = name_match.group(1).strip()
+                if tool_name in known_tools:
+                    params = {}
+                    param_block_match = _re.search(r'<parameters>(.*?)</parameters>', block, _re.DOTALL)
+                    if param_block_match:
+                        param_block = param_block_match.group(1)
+                        for p_match in _re.finditer(r'<([^>]+)>(.*?)</\1>', param_block, _re.DOTALL):
+                            params[p_match.group(1).strip()] = p_match.group(2).strip()
+                    calls.append({"tool": tool_name, "args": params})
+            if calls:
+                return calls
+
+        text_len = len(text)
+        i = 0
+        while i < text_len:
+            found_tool = None
+            found_pos = -1
+            for tool in known_tools:
+                pos = text.find(tool + "(", i)
+                if pos >= 0 and (found_pos == -1 or pos < found_pos):
+                    found_pos = pos
+                    found_tool = tool
+            
+            if found_tool is None:
                 break
-            depth = 0
-            for i in range(start, len(text)):
-                if text[i] == '{':
-                    depth += 1
-                elif text[i] == '}':
-                    depth -= 1
-                    if depth == 0:
-                        candidate = text[start:i + 1]
-                        try:
-                            obj = json.loads(candidate)
-                            if "tool" in obj:
-                                calls.append(obj)
-                        except json.JSONDecodeError:
-                            pass
-                        start = i + 1
-                        break
+                
+            pos = found_pos + len(found_tool) + 1
+            depth = 1
+            in_quote = None  # None, '"', "'", '"""', "'''"
+            quote_esc = False
+            
+            while pos < text_len and depth > 0:
+                char = text[pos]
+                if not in_quote:
+                    if text[pos:pos+3] == '"""':
+                        in_quote = '"""'
+                        pos += 2
+                    elif text[pos:pos+3] == "'''":
+                        in_quote = "'''"
+                        pos += 2
+                    elif char == '"':
+                        in_quote = '"'
+                    elif char == "'":
+                        in_quote = "'"
+                    elif char == '(':
+                        depth += 1
+                    elif char == ')':
+                        depth -= 1
+                else:
+                    if quote_esc:
+                        quote_esc = False
+                    elif char == '\\':
+                        quote_esc = True
+                    elif in_quote == '"""' and text[pos:pos+3] == '"""':
+                        in_quote = None
+                        pos += 2
+                    elif in_quote == "'''" and text[pos:pos+3] == "'''":
+                        in_quote = None
+                        pos += 2
+                    elif char == in_quote:
+                        in_quote = None
+                pos += 1
+                
+            if depth == 0:
+                call_candidate = text[found_pos:pos]
+                parsed = parse_pll_call(call_candidate)
+                if parsed and parsed["tool"] in known_tools:
+                    mapped_args = map_args(parsed["tool"], parsed["args_list"])
+                    calls.append({"tool": parsed["tool"], "args": mapped_args})
+                i = pos
             else:
-                break
+                i = found_pos + 1
+                
         return calls
 
     async def _call_llm(self, system: str, messages: list[dict]) -> str:
@@ -525,7 +665,7 @@ class AgentReAct:
             with tempfile.NamedTemporaryFile(mode="w", suffix=".pll", delete=False, encoding="utf-8") as f:
                 f.write(code)
                 tmp_path = f.name
-            r = subprocess.run([binary, "run", "--bc", tmp_path], capture_output=True, text=True, timeout=30, cwd=cwd)
+            r = subprocess.run([binary, "run", "--bc", tmp_path], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, cwd=cwd)
             os.unlink(tmp_path)
             if r.returncode != 0:
                 err = r.stderr.strip()[:500]
@@ -624,7 +764,7 @@ class AgentReAct:
             with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
                 f.write(code)
                 tmp_path = f.name
-            r = subprocess.run(["python", tmp_path], capture_output=True, text=True, timeout=15, cwd=cwd)
+            r = subprocess.run(["python", tmp_path], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15, cwd=cwd)
             os.unlink(tmp_path)
             out = r.stdout.strip()
             err = r.stderr.strip()[:500]
@@ -644,7 +784,7 @@ class AgentReAct:
         allowed = await self._project_dir()
         cwd = str(allowed) if allowed else None
         try:
-            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30, cwd=cwd)
+            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, cwd=cwd)
             out = r.stdout.strip()[:3000]
             err = r.stderr.strip()[:500]
             if r.returncode != 0 and not out:
@@ -844,20 +984,17 @@ class AgentReAct:
     async def run(self, user_message: str, context: str = "", step_callback=None) -> dict:
         """ReAct loop. step_callback(steps_list, step_info, current_step, max_steps) is called after each tool execution for SSE."""
         system = (
-            "You are an AI coding assistant that thinks in PLL.\n\n"
-            "PLL is for planning — follow PLL with a JSON tool call.\n"
-            "You can also respond with plain text (no PLL, no tool) when answering a question.\n\n"
-            "IMPORTANT: The tool names below (write_file, probe_path, etc.) are BUILT-IN COMMANDS.\n"
-            "When the user says \"use probe_path\" or \"call write_file\", they mean the built-in tool,\n"
-            "NOT a file to create. Never write a file whose name matches a built-in tool.\n\n"
+            "You are an AI coding assistant that thinks and acts in PLL.\n\n"
+            "PLL is for planning AND action — call tools using function syntax: list_dir(\"path\").\n"
+            "You can also respond with plain text when answering a question.\n\n"
+            "CRITICAL: Do NOT use XML tags like <tool_call>, <tool_name>, or <parameters>.\n"
+            "Do NOT use JSON or other formats for tool calling. Call tools ONLY using pure inline PLL function syntax, e.g. list_dir(\"path\").\n\n"
             "PLL quick reference:\n"
-            '  v x != "text"           - variable\n'
-            '  v x != ?("prompt")      - LLM belief\n'
-            '  {"tool": "...", "args": {...}}  - tool call\n\n'
-            "Rules:\n"
-            "- Write COMPLETE file content in one write_file call (never empty then edit).\n"
-            "- Prefer writing multiple files in parallel (multiple tool calls per response).\n"
-            "- Call final_answer only when ALL work is finished.\n\n"
+            '  v x != "text"               - variable\n'
+            '  v x != ?("prompt")          - LLM belief\n'
+            '  list_dir(".")               - tool call\n'
+            '  write_file("path", "...")   - write file\n'
+            '  read_file("path")           - read file\n\n'
             f"{TOOL_DESCRIPTIONS}\n"
             f"Project ID: {self.project_id}\n"
             f"{context}"
@@ -875,10 +1012,19 @@ class AgentReAct:
 
             # Extract text before the first tool call as thinking/answer
             text_before_call = response.strip()
-            first_brace = text_before_call.find('{"tool":')
-            if first_brace >= 0:
-                text_before_call = text_before_call[:first_brace].strip()
-            if text_before_call and not text_before_call.startswith('v ') and not text_before_call.startswith('{'):
+            first_call_pos = text_before_call.find("<tool_call>")
+            known_tools = {
+                "write_file", "read_file", "delete_file", "list_dir", "glob_files", 
+                "grep_files", "exec_shell", "probe_path", "web_fetch", "web_search", 
+                "final_answer", "rename_file", "zip_project"
+            }
+            for tool in known_tools:
+                pos = text_before_call.find(tool + "(")
+                if pos >= 0 and (first_call_pos == -1 or pos < first_call_pos):
+                    first_call_pos = pos
+            if first_call_pos >= 0:
+                text_before_call = text_before_call[:first_call_pos].strip()
+            if text_before_call and not text_before_call.startswith('v '):
                 accumulated_answer = text_before_call
 
             tool_calls = self._parse_tool_calls(response)
@@ -888,13 +1034,6 @@ class AgentReAct:
                     final["thinking"] = accumulated_answer
                 return final
 
-            # If agent has meaningful text AND also tool calls, respond with the text now
-            # But only after at least one tool has been executed (don't cut off first response)
-            if accumulated_answer and len(steps) > 0:
-                final = {"answer": accumulated_answer, "steps": steps, "code": current_code, "file_path": current_file}
-                if step_callback:
-                    await step_callback(steps, {"tool": "final_answer", "args": {}, "result": accumulated_answer}, step + 1, self.max_steps)
-                return final
 
             # Group tools: run independent (read) tools in parallel, sequential ones one by one
             READ_ONLY = {"read_file", "list_dir", "glob_files", "grep_files", "search_vault",
@@ -942,7 +1081,7 @@ class AgentReAct:
                 if step_callback:
                     await step_callback(steps, step_info, step + 1, self.max_steps)
 
-            messages.append({"role": "user", "content": f"Result:\n{last_result}\n\nContinue thinking in PLL, then call next tool:"})
+            messages.append({"role": "user", "content": f"Result:\n{last_result}\n\nContinue thinking in PLL. If you have finished the user's request, call final_answer(text). Otherwise, call the next tool:"})
 
             if len(messages) > 12:
                 messages = [messages[0]] + messages[-10:]

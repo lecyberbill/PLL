@@ -100,33 +100,23 @@ class GoResponse(BaseModel):
     agent_info: dict = {}
 
 
-_RESUME = {"reprend", "reprends", "explique", "que fait", "décrit", "décris", "raconte", "résume", "status", "état", "projet en cours", "idée", "id", "suggestion", "propose", "idées"}
-
-
 async def _detect_mode(message: str, has_files: bool = False) -> str:
-    msg_lower = message.lower()
-    # Fast path: resume/explain — clearly conversational
-    if any(kw in msg_lower for kw in _RESUME):
-        return "resume"
-    # Fast path: greetings
-    if not message.strip() or any(msg_lower.strip() == g for g in ("hello", "bonjour", "salut", "cc", "hey", "hi")):
-        return "resume"
-    # If user mentions an agent tool by name, force react mode (tools only available in react)
-    _TOOL_NAMES = {"read_file", "write_file", "list_dir", "glob_files", "grep_files",
-                   "exec_shell", "probe_path", "web_fetch", "web_search",
-                   "git_status", "git_commit", "git_init", "final_answer"}
-    if any(tool in msg_lower for tool in _TOOL_NAMES):
-        return "react"
-    # LLM decides simple vs react
     from services.llm_proxy import chat_completion
+    system_prompt = (
+        "You are an AI router. Classify the user request into exactly one of three categories:\n"
+        "- 'resume': if the request is a general question, greeting, conversational chat, or request for explanations/status of the project.\n"
+        "- 'simple': if the request is to create or edit a single file (no tool loop needed).\n"
+        "- 'react': if the request requires multiple steps, checking folders/files, running shell commands, or utilizing tools (like verification, exploration, multi-file code creation/edits).\n\n"
+        "Reply with exactly one word: 'resume', 'simple', or 'react'."
+    )
     result = await chat_completion(
         messages=[{"role": "user", "content": message[:500]}],
-        system_prompt="You classify coding requests. Reply with exactly one word: 'simple' for a single-file task or one-off edit. Reply 'react' if the request mentions multiple files (even implicitly: css+js, components+pages, backend+frontend), or requires multiple steps (install, configure, build).",
+        system_prompt=system_prompt,
         temperature=0,
         backend="",
     )
     mode = result.get("response", "").strip().lower()
-    return mode if mode in ("simple", "react") else "react"
+    return mode if mode in ("resume", "simple", "react") else "react"
 
 
 @router.post("/go", response_model=GoResponse)
@@ -195,7 +185,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     if agent_session.current_state:
         pending = AgentBrain._parse_pending(agent_session.current_state)
 
-    mode = await _detect_mode(augmented_msg, has_files)
+    mode = await _detect_mode(req.message, has_files)
 
     # Resume mode (clear pending, fresh exploration)
     if mode == "resume":
@@ -242,7 +232,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     else:
         context_str = f"Project: {project.name}\nFiles: {', '.join(file_names) if file_names else '(empty)'}"
 
-    mode = await _detect_mode(augmented_msg, has_files)
+    mode = await _detect_mode(req.message, has_files)
 
     if mode == "resume":
         result = await brain.process_request(req.project_id, augmented_msg, backend=req.backend)
@@ -367,7 +357,7 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
                 file_names = [str(f.relative_to(pdir)) for f in disk_files[:50]]
 
         brain = AgentBrain(db)
-        mode = await _detect_mode(augmented_msg, has_files)
+        mode = await _detect_mode(req.message, has_files)
 
         yield f"data: {json.dumps({'type': 'mode', 'mode': mode})}\n\n"
 
