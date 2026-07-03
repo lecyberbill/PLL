@@ -382,6 +382,7 @@ async function loadProjectFromServer(projectId) {
     renderVfsList();
     logToTerminal(`Projet chargé (${filesList.length} fichiers).`, 'sys-msg');
     localStorage.setItem('pll-last-project', projectId.toString());
+    elBtnDeleteProject.style.display = '';
     await loadProjects();
     refreshGitStatus();
     loadConversations();
@@ -785,16 +786,9 @@ elProjectSelect.addEventListener('change', async (e) => {
         currentProjectId = null;
         elBtnDeleteProject.style.display = 'none';
         clearDefaults();
-        for (const [path, content] of Object.entries(DEFAULT_FILES)) {
-            set_virtual_file(path, content);
-            filesList.push(path);
-        }
-        openFiles = ['main.py', 'helpers.pll'];
-        activeFile = 'main.py';
-        setEditorContent(DEFAULT_FILES['main.py']);
-        setEditorLanguage(detectLanguage(activeFile));
         renderTabs();
         renderVfsList();
+        elAgenticConversation.innerHTML = '<div class="sys-msg">Posez une question à l\'agent.</div>';
         logToTerminal('Mode local', 'sys-msg');
     }
 });
@@ -813,14 +807,6 @@ elBtnDeleteProject.addEventListener('click', async () => {
         currentProjectId = null;
         elBtnDeleteProject.style.display = 'none';
         clearDefaults();
-        for (const [path, content] of Object.entries(DEFAULT_FILES)) {
-            set_virtual_file(path, content);
-            filesList.push(path);
-        }
-        openFiles = ['main.py', 'helpers.pll'];
-        activeFile = 'main.py';
-        setEditorContent(DEFAULT_FILES['main.py']);
-        setEditorLanguage(detectLanguage(activeFile));
         renderTabs();
         renderVfsList();
         await loadProjects();
