@@ -138,19 +138,26 @@ class AgentBrain:
                 confirm = await chat_completion(
                     messages=[{"role": "user", "content": (
                         f"Message: {user_message[:200]}\n\n"
-                        f"EXPLORE = user wants ideas, explanations, greetings, conversation, project review\n"
-                        f"GENERATE = user wants to create, edit, fix, modify code\n\n"
+                        f"EXPLORE = user wants ideas, explanations, greetings, conversation, small talk, project review, status updates, or requests to wait/stop.\n"
+                        f"GENERATE = explicitly requests creating, editing, fixing, or modifying code files.\n\n"
+                        f"Think step-by-step about the intent, then output the final choice as either <intent>EXPLORE</intent> or <intent>GENERATE</intent>.\n\n"
                         f"Examples:\n"
-                        f'  EXPLORE: "propose moi une idée", "what can I do", "hello", "tu es opérationnel", "explain the code"\n'
-                        f'  GENERATE: "crée une API", "add a route", "fix the bug", "write a function"\n\n'
-                        f"Reply with exactly one word: EXPLORE or GENERATE"
+                        f'  - "hello" -> Thought: Greeting. Choice: <intent>EXPLORE</intent>\n'
+                        f'  - "attend je debug et on se reparle" -> Thought: Casual notice telling me to wait. Choice: <intent>EXPLORE</intent>\n'
+                        f'  - "de ton côté pas eu de difficulté ?" -> Thought: Small talk / question. Choice: <intent>EXPLORE</intent>\n'
+                        f'  - "ajoute une route à app.py" -> Thought: Edit code file. Choice: <intent>GENERATE</intent>'
                     )}],
-                    system_prompt="Classify the user intent. Reply with exactly one word: EXPLORE or GENERATE.",
+                    system_prompt="Classify the user intent. Output either EXPLORE or GENERATE within the <intent> tag.",
                     temperature=0.05,
                     backend=backend,
                 )
-                resp = confirm["response"].upper().strip().rstrip(".")
-                resume_mode = resp.startswith("EXPLORE")
+                resp = confirm["response"].upper().strip()
+                import re as _re_intent
+                match = _re_intent.search(r'<intent>(EXPLORE|GENERATE)</intent>', resp)
+                if match:
+                    resume_mode = (match.group(1) == "EXPLORE")
+                else:
+                    resume_mode = "EXPLORE" in resp or not ("GENERATE" in resp)
             except Exception:
                 resume_mode = True  # fallback: assume conversation on error
 

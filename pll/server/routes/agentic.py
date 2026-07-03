@@ -103,11 +103,19 @@ class GoResponse(BaseModel):
 async def _detect_mode(message: str, has_files: bool = False) -> str:
     from services.llm_proxy import chat_completion
     system_prompt = (
-        "You are an AI router. Classify the user request into exactly one of three categories:\n"
-        "- 'resume': if the request is a general question, greeting, conversational chat, or request for explanations/status of the project.\n"
-        "- 'simple': if the request is to create or edit a single file (no tool loop needed).\n"
-        "- 'react': if the request requires multiple steps, checking folders/files, running shell commands, or utilizing tools (like verification, exploration, multi-file code creation/edits).\n\n"
-        "Reply with exactly one word: 'resume', 'simple', or 'react'."
+        "You are an AI router. Analyze the user message step-by-step to understand the intent.\n\n"
+        "Categories:\n"
+        "- 'resume': conversational chatter, greetings, questions, status requests, feedback/small talk, or messages saying to wait/stop (e.g., 'attend', 'ok merci', 'super', 'de ton côté ?').\n"
+        "- 'simple': explicitly requests creating or editing a single file (e.g., 'crée index.html', 'ajoute une route à app.py').\n"
+        "- 'react': requests executing multi-step tasks, shell commands, verification, or multi-file edits (e.g., 'teste le projet', 'installe npm', 'cherche le bug').\n\n"
+        "Think step-by-step first, then output the final decision in the following tag: <category>decision</category>\n\n"
+        "Examples:\n"
+        "- 'hello' -> Thought: Greeting. Category: resume.\n"
+        "- 'attend je debug et on se reparle' -> Thought: Conversational notice to wait, no action requested. Category: resume.\n"
+        "- 'de ton côté pas eu de difficulté ?' -> Thought: Casual question/small talk. Category: resume.\n"
+        "- 'ok super merci' -> Thought: Conversational feedback. Category: resume.\n"
+        "- 'crée un serveur express' -> Thought: Single file creation requested. Category: simple.\n"
+        "- 'lance les tests et dis moi' -> Thought: Shell execution / verification task. Category: react."
     )
     result = await chat_completion(
         messages=[{"role": "user", "content": message[:500]}],
@@ -115,8 +123,18 @@ async def _detect_mode(message: str, has_files: bool = False) -> str:
         temperature=0,
         backend="",
     )
-    mode = result.get("response", "").strip().lower()
-    return mode if mode in ("resume", "simple", "react") else "react"
+    resp = result.get("response", "")
+    import re
+    match = re.search(r'<category>(\w+)</category>', resp.lower())
+    if match:
+        mode = match.group(1).strip()
+        if mode in ("resume", "simple", "react"):
+            return mode
+    # Fallback parsing
+    for mode in ("resume", "simple", "react"):
+        if mode in resp.lower()[-20:]:
+            return mode
+    return "react"
 
 
 @router.post("/go", response_model=GoResponse)
