@@ -24,7 +24,7 @@ def count_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 # Define realistic system prompts
-JSON_SYSTEM_PROMPT = """You are an AI coding assistant. You can call tools by outputting a JSON object.
+JSON_SYSTEM_PROMPT = """You are an AI coding assistant. You can call tools by outputting a JSON list of tool call objects.
 Available tools:
 [
   {
@@ -73,6 +73,17 @@ Available tools:
     }
   },
   {
+    "name": "probe_path",
+    "description": "Verify if a path exists.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "path": {"type": "string", "description": "Path to verify"}
+      },
+      "required": ["path"]
+    }
+  },
+  {
     "name": "final_answer",
     "description": "Call this to complete the task.",
     "parameters": {
@@ -84,7 +95,7 @@ Available tools:
     }
   }
 ]
-Respond ONLY with a JSON tool call object, like: {"tool": "list_dir", "args": {"path": "src"}}"""
+Respond ONLY with a JSON list of tool call objects, like: [{"tool": "list_dir", "args": {"path": "src"}}]"""
 
 PLL_SYSTEM_PROMPT = """You are an AI assistant that thinks and acts in PLL.
 Call tools using inline function syntax.
@@ -93,6 +104,7 @@ PLL Reference:
   read_file("path")
   write_file("path", "content")
   exec_shell("cmd")
+  probe_path("path")
   final_answer("text")
 
 Respond in PLL format. Example:
@@ -206,6 +218,36 @@ Result: public/ contains index.html, css/
 Asst: {"tool": "read_file", "args": {"path": "public/css/style.css"}}
 Result: .card { color: red; }
 Asst: {"tool": "final_answer", "args": {"text": "Style verified."}}"""
+    },
+    "6. Complex ReAct Stress Test (Multi-file refactor)": {
+        "description": "Simulating a complex sequence of tool calls: 3 reads, 2 writes with code blocks, 1 command exec, 1 verification.",
+        "pll": '''read_file("public/index.html")
+read_file("public/js/app.js")
+read_file("public/css/style.css")
+write_file("public/css/theme.css", """
+.theme-dark {
+    background: #121212;
+    color: #ffffff;
+    transition: background 0.3s ease;
+}
+""")
+write_file("public/js/utils.js", """
+export const formatTemp = (t) => `${Math.round(t)}°C`;
+export const cleanInput = (s) => s.trim().replace(/[^a-zA-Z\\s]/g, "");
+""")
+exec_shell("npm run build")
+probe_path("dist/index.html")
+final_answer("Refactored layout and compiled assets successfully.")''',
+        "json": json.dumps([
+            {"tool": "read_file", "args": {"path": "public/index.html"}},
+            {"tool": "read_file", "args": {"path": "public/js/app.js"}},
+            {"tool": "read_file", "args": {"path": "public/css/style.css"}},
+            {"tool": "write_file", "args": {"path": "public/css/theme.css", "content": ".theme-dark {\n    background: #121212;\n    color: #ffffff;\n    transition: background 0.3s ease;\n}"}},
+            {"tool": "write_file", "args": {"path": "public/js/utils.js", "content": "export const formatTemp = (t) => `${Math.round(t)}°C`;\nexport const cleanInput = (s) => s.trim().replace(/[^a-zA-Z\\s]/g, \"\");"}},
+            {"tool": "exec_shell", "args": {"cmd": "npm run build"}},
+            {"tool": "probe_path", "args": {"path": "dist/index.html"}},
+            {"tool": "final_answer", "args": {"text": "Refactored layout and compiled assets successfully."}}
+        ])
     }
 }
 
@@ -217,7 +259,7 @@ def query_local_llm(system: str, prompt: str) -> tuple:
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.1,
-        "max_tokens": 500
+        "max_tokens": 800
     }
     data = json.dumps(payload).encode("utf-8")
     req = Request(
@@ -227,7 +269,7 @@ def query_local_llm(system: str, prompt: str) -> tuple:
     )
     start_time = time.time()
     try:
-        with urlopen(req, timeout=45) as response:
+        with urlopen(req, timeout=60) as response:
             res_data = json.loads(response.read().decode("utf-8"))
             duration = time.time() - start_time
             choice = res_data["choices"][0]["message"]["content"]
@@ -285,20 +327,20 @@ def run_benchmark(live_mode=False):
         
     if live_mode:
         print("\n[LIVE MODE] Ping local LM Studio instance...")
-        user_query = "vérifie le contenu du dossier public/ pour voir s'il y a des fichiers."
+        
+        # Test 1: Simple query
+        simple_query = "vérifie le contenu du dossier public/ pour voir s'il y a des fichiers."
+        print(f"Running Simple Live Query...")
         try:
-            print("Sending query in JSON format...")
-            json_resp, json_dur, json_in, json_out = query_local_llm(JSON_SYSTEM_PROMPT, user_query)
-            
-            print("Sending query in PLL format...")
-            pll_resp, pll_dur, pll_in, pll_out = query_local_llm(PLL_SYSTEM_PROMPT, user_query)
+            json_resp, json_dur, json_in, json_out = query_local_llm(JSON_SYSTEM_PROMPT, simple_query)
+            pll_resp, pll_dur, pll_in, pll_out = query_local_llm(PLL_SYSTEM_PROMPT, simple_query)
             
             live_in_savings = ((json_in - pll_in) / json_in) * 100
             live_out_savings = ((json_out - pll_out) / json_out) * 100
             
             report_lines.extend([
-                "## 3. Live LM Studio Generation Results",
-                f"**Query**: \"{user_query}\"",
+                "## 3. Live LM Studio Generation (Simple Query)",
+                f"**Query**: \"{simple_query}\"",
                 "",
                 "| Metric | JSON Mode | PLL Mode | PLL Savings % |",
                 "| :--- | :---: | :---: | :---: |",
@@ -306,24 +348,49 @@ def run_benchmark(live_mode=False):
                 f"| **Output Tokens (Completion)** | {json_out} | {pll_out} | **{live_out_savings:.1f}%** |",
                 f"| **Total Tokens** | {json_in + json_out} | {pll_in + pll_out} | **{((json_in+json_out)-(pll_in+pll_out))/(json_in+json_out)*100:.1f}%** |",
                 f"| **Generation Time** | {json_dur:.2f}s | {pll_dur:.2f}s | **{((json_dur-pll_dur)/json_dur)*100:.1f}%** |",
+                ""
+            ])
+        except Exception as e:
+            print(f"[WARNING] Simple Live query failed: {e}")
+            
+        # Test 2: Stress Test query
+        stress_query = "You need to perform a full refactor: read public/index.html, public/js/app.js, public/css/style.css, then write a new dark theme style in public/css/theme.css, write a helper format function (formatTemp) and an input cleaning regex in public/js/utils.js, run 'npm run build', check if 'dist/index.html' exists, and return a final answer. Generate all the necessary tool calls sequentially in one go."
+        print(f"Running Complex Live Stress Test...")
+        try:
+            s_json_resp, s_json_dur, s_json_in, s_json_out = query_local_llm(JSON_SYSTEM_PROMPT, stress_query)
+            s_pll_resp, s_pll_dur, s_pll_in, s_pll_out = query_local_llm(PLL_SYSTEM_PROMPT, stress_query)
+            
+            s_live_in_savings = ((s_json_in - s_pll_in) / s_json_in) * 100
+            s_live_out_savings = ((s_json_out - s_pll_out) / s_json_out) * 100
+            
+            report_lines.extend([
+                "## 4. Live LM Studio Generation (Complex Stress Test)",
+                f"**Query**: \"{stress_query}\"",
                 "",
-                "### Output Samples",
+                "| Metric | JSON Mode | PLL Mode | PLL Savings % |",
+                "| :--- | :---: | :---: | :---: |",
+                f"| **Input Tokens (Prompt)** | {s_json_in} | {s_pll_in} | **{s_live_in_savings:.1f}%** |",
+                f"| **Output Tokens (Completion)** | {s_json_out} | {s_pll_out} | **{s_live_out_savings:.1f}%** |",
+                f"| **Total Tokens** | {s_json_in + s_json_out} | {s_pll_in + s_pll_out} | **{((s_json_in+s_json_out)-(s_pll_in+s_pll_out))/(s_json_in+s_json_out)*100:.1f}%** |",
+                f"| **Generation Time** | {s_json_dur:.2f}s | {s_pll_dur:.2f}s | **{((s_json_dur-s_pll_dur)/s_json_dur)*100:.1f}%** |",
+                "",
+                "### Output Samples (Stress Test)",
                 "**JSON Output**:",
                 "```json",
-                json_resp,
+                s_json_resp,
                 "```",
                 "",
                 "**PLL Output**:",
                 "```pll",
-                pll_resp,
+                s_pll_resp,
                 "```"
             ])
-            print("Live generation completed successfully!")
+            print("Live Stress Test completed successfully!")
         except Exception as e:
-            print(f"\n[WARNING] Live generation failed: {e}")
+            print(f"[WARNING] Live Stress Test query failed: {e}")
             report_lines.extend([
-                "## 3. Live LM Studio Generation Results",
-                "_Live generation skipped or failed to connect to LM Studio (localhost:1234)._"
+                "## 4. Live LM Studio Generation (Complex Stress Test)",
+                f"_Failed to run Stress Test: {e}_"
             ])
     else:
         report_lines.extend([
