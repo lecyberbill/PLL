@@ -64,6 +64,12 @@ Local models (7B - 35B) frequently fail when generating long JSON payloads conta
 ### 4.2 Cumulative ReAct loop savings
 Because ReAct agents must carry the conversation history at every step, any token savings in early steps scale quadratically. Saving **476 tokens on prompt priming** plus **~1,000 tokens on outputs** prevents context window saturation on local hosts and drastically speeds up inference.
 
+### 4.3 Program-Aided Reasoning (Augmenting SLMs with the Rust VM)
+LLMs are notoriously weak at performing deterministic computations (like complex mathematical recursions, floating-point arithmetic, or sorting algorithms) inside their neural networks. 
+By generating a lightweight PLL script and offloading it to the native **Rust VM** (or browser WebAssembly runtime), a small local model (e.g. 7B) can guarantee 100% mathematical accuracy. 
+
+Unlike Python execution (which requires heavy OS-level sandboxing to prevent security breaches), the PLL VM is a secure, sandboxed environment by design, allowing secure computation delegation even on client-side hosts. This offsets the cognitive gap between small local models and frontier APIs (like Claude Opus) for computational tasks.
+
 ---
 
 ## 5. Running the Benchmarks Locally
