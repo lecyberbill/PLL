@@ -80,6 +80,8 @@ async def _get_project(project_id: int, db: AsyncSession) -> Project:
 
 def _ensure_repo(git_dir: Path):
     """Init git repo if not already one."""
+    if not git_dir.exists():
+        git_dir.mkdir(parents=True, exist_ok=True)
     if not (git_dir / ".git").exists():
         _git("init", cwd=git_dir)
         _git("config", "user.name", "PLL Agent", cwd=git_dir)

@@ -129,25 +129,30 @@ class AgentBrain:
 
         # Let the LLM decide: explore/converse or generate code
         resume_mode = False
-        try:
-            confirm = await chat_completion(
-                messages=[{"role": "user", "content": (
-                    f"Message: {user_message[:200]}\n\n"
-                    f"EXPLORE = user wants ideas, explanations, greetings, conversation, project review\n"
-                    f"GENERATE = user wants to create, edit, fix, modify code\n\n"
-                    f"Examples:\n"
-                    f'  EXPLORE: "propose moi une idée", "what can I do", "hello", "tu es opérationnel", "explain the code"\n'
-                    f'  GENERATE: "crée une API", "add a route", "fix the bug", "write a function"\n\n'
-                    f"Reply with exactly one word: EXPLORE or GENERATE"
-                )}],
-                system_prompt="Classify the user intent. Reply with exactly one word: EXPLORE or GENERATE.",
-                temperature=0.05,
-                backend=backend,
-            )
-            resp = confirm["response"].upper().strip().rstrip(".")
-            resume_mode = resp.startswith("EXPLORE")
-        except Exception:
-            resume_mode = True  # fallback: assume conversation on error
+        # If user mentions a file path, force GENERATE mode (not exploration)
+        import re as _re_path
+        if _re_path.search(r'[a-zA-Z]:\\(?:[^\\]+\\)*(?:[^\\]+)?|/(?:[^/]+/)*(?:[^/]+)?\.[a-zA-Z]+', user_message):
+            resume_mode = False
+        else:
+            try:
+                confirm = await chat_completion(
+                    messages=[{"role": "user", "content": (
+                        f"Message: {user_message[:200]}\n\n"
+                        f"EXPLORE = user wants ideas, explanations, greetings, conversation, project review\n"
+                        f"GENERATE = user wants to create, edit, fix, modify code\n\n"
+                        f"Examples:\n"
+                        f'  EXPLORE: "propose moi une idée", "what can I do", "hello", "tu es opérationnel", "explain the code"\n'
+                        f'  GENERATE: "crée une API", "add a route", "fix the bug", "write a function"\n\n'
+                        f"Reply with exactly one word: EXPLORE or GENERATE"
+                    )}],
+                    system_prompt="Classify the user intent. Reply with exactly one word: EXPLORE or GENERATE.",
+                    temperature=0.05,
+                    backend=backend,
+                )
+                resp = confirm["response"].upper().strip().rstrip(".")
+                resume_mode = resp.startswith("EXPLORE")
+            except Exception:
+                resume_mode = True  # fallback: assume conversation on error
 
         if not target_file and not resume_mode:
             target_file = self._detect_target(user_message, agent, context["files"])

@@ -381,6 +381,7 @@ async function loadProjectFromServer(projectId) {
     renderTabs();
     renderVfsList();
     logToTerminal(`Projet chargé (${filesList.length} fichiers).`, 'sys-msg');
+    localStorage.setItem('pll-last-project', projectId.toString());
     await loadProjects();
     refreshGitStatus();
     loadConversations();
@@ -503,28 +504,8 @@ function addAgenticMessage(role, content) {
 
 async function ensureProjectForAgentic() {
     if (currentProjectId) return true;
-    try {
-        const project = await api('/api/projects', {
-            method: 'POST',
-            body: JSON.stringify({ name: 'Agentic Project', description: 'Créé par l\'agent' }),
-        });
-        currentProjectId = project.id;
-        await loadProjects();
-        // Clear VFS defaults — a new project starts empty
-        filesList = [];
-        openFiles = [];
-        activeFile = null;
-        clearEditor();
-        // Save empty project to server
-        await api(`/api/projects/${currentProjectId}/files`, {
-            method: 'POST', body: JSON.stringify({ path: '.gitkeep', content: '' }),
-        });
-        addAgenticMessage('system', `Projet "${project.name}" (ID: ${project.id}).`);
-        return true;
-    } catch (e) {
-        addAgenticMessage('system', `Erreur: ${e.message}`);
-        return false;
-    }
+    addAgenticMessage('system', '❌ Sélectionne ou crée un projet d\'abord (menu en haut à gauche).');
+    return false;
 }
 
 async function sendAgenticMessage() {
@@ -533,7 +514,6 @@ async function sendAgenticMessage() {
     elAgenticInput.value = '';
     addAgenticMessage('user', msg);
     if (!await ensureProjectForAgentic()) return;
-    await saveProjectToServer();
     const backend = elAgenticBackend.value;
 
     // Create a placeholder for streaming
@@ -585,19 +565,17 @@ async function sendAgenticMessage() {
                         if (ev.type === 'mode') {
                             placeholder.textContent = `🤖 Agent · mode ${ev.mode}`;
                         } else if (ev.type === 'step') {
-                            const icons = { read_file: '📖', write_file: '✏️', edit_artifact: '✏️', glob_files: '🔍', grep_files: '🔍', list_dir: '📂', run_command: '⚡', search_vault: '💾', git_status: '⎇', git_commit: '📝', git_push: '⬆️', git_init: '🔧', git_remote: '🔗', exec_pll: '⚙️', web_fetch: '🌐', web_search: '🔎', edit_file: '✏️', exec_python: '🐍', exec_shell: '💻', tree: '🌳', diff_files: '📊', search_code: '🔍', count_tokens: '🔢', read_lines: '📄', zip_project: '📦', publish_package: '📦', final_answer: '✅' };
+                            const icons = { read_file: '📖', write_file: '✏️', glob_files: '🔍', grep_files: '🔍', list_dir: '📂', exec_shell: '💻', git_status: '⎇', git_commit: '📝', git_init: '🔧', web_fetch: '🌐', web_search: '🔎', probe_path: '🔎', final_answer: '✅' };
                             const icon = icons[ev.tool] || '➡️';
-                            // Extract useful info from result (file path, bytes written)
-                            let label = ev.tool;
+                            let labelLine = `${icon} **${ev.tool}**`;
                             if (ev.result) {
-                                // "Written 1234 bytes to src/file.ts" or "Saved artifact src/file.ts (project 1)"
-                                const m = ev.result.match(/(?:bytes to|Saved artifact)\s+(\S+)/);
-                                if (m) label = m[1];
-                                else if (ev.result.startsWith('ERROR')) label = `⚠️ ${ev.result.slice(0, 50)}`;
-                                else label = ev.result.slice(0, 60);
+                                if (ev.result.startsWith('ERROR')) {
+                                    labelLine += ` ⚠️ ${ev.result.slice(0, 200)}`;
+                                } else {
+                                    labelLine += `\n\`\`\`\n${ev.result.slice(0, 800)}\n\`\`\``;
+                                }
                             }
-                            stepsHtml += `${icon} ${label}\n`;
-                            placeholder.textContent = `🤖 ${label}`;
+                            stepsHtml += labelLine + '\n';
                         } else if (ev.type === 'explanation') {
                             placeholder.textContent = `🤖 ${ev.text.slice(0, 120)}`;
                         } else if (ev.type === 'code') {
@@ -648,19 +626,21 @@ async function main() {
             if (activeFile) set_virtual_file(activeFile, editor.getValue());
         });
         clearDefaults();
-        for (const [path, content] of Object.entries(DEFAULT_FILES)) {
-            set_virtual_file(path, content);
-            filesList.push(path);
-        }
-        openFiles = ['main.py', 'helpers.pll'];
-        activeFile = 'main.py';
-        setEditorContent(DEFAULT_FILES['main.py']);
-        setEditorLanguage(detectLanguage(activeFile));
-        renderTabs();
-        renderVfsList();
-        logToTerminal('PLL WASM + Monaco Editor chargés.', 'sys-msg');
         await loadProjects();
         await refreshPackages();
+        // Restore last project
+        const lastProjectId = localStorage.getItem('pll-last-project');
+        if (lastProjectId) {
+            const projectSelect = document.getElementById('project-select');
+            if ([...projectSelect.options].some(o => o.value === lastProjectId)) {
+                projectSelect.value = lastProjectId;
+                currentProjectId = parseInt(lastProjectId);
+                await loadProjectFromServer(currentProjectId);
+            }
+        }
+        if (!currentProjectId) {
+            logToTerminal('Bienvenue ! Crée ou sélectionne un projet pour commencer.', 'sys-msg');
+        }
         refreshGitStatus();
     } catch (e) {
         logToTerminal(`Erreur: ${e}`, 'error-msg');

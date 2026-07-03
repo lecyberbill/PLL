@@ -39,7 +39,7 @@ async def agentic_ask(req: AskRequest, db: AsyncSession = Depends(get_db)):
     brain = AgentBrain(db)
     try:
         result = await brain.process_request(
-            req.project_id, req.message, backend=req.backend, target_file=req.target_file
+            req.project_id, augmented_msg, backend=req.backend, target_file=req.target_file
         )
         if result.get("explanation"):
             return AskResponse(
@@ -74,7 +74,7 @@ async def agentic_chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
     """Conversational chat with RAG context from the vault."""
     brain = AgentBrain(db)
     try:
-        response = await brain.chat(req.project_id, req.message)
+        response = await brain.chat(req.project_id, augmented_msg)
         return {"response": response}
     except (ValueError, ConnectionError, RuntimeError) as e:
         raise HTTPException(400, str(e))
@@ -111,6 +111,12 @@ async def _detect_mode(message: str, has_files: bool = False) -> str:
     # Fast path: greetings
     if not message.strip() or any(msg_lower.strip() == g for g in ("hello", "bonjour", "salut", "cc", "hey", "hi")):
         return "resume"
+    # If user mentions an agent tool by name, force react mode (tools only available in react)
+    _TOOL_NAMES = {"read_file", "write_file", "list_dir", "glob_files", "grep_files",
+                   "exec_shell", "probe_path", "web_fetch", "web_search",
+                   "git_status", "git_commit", "git_init", "final_answer"}
+    if any(tool in msg_lower for tool in _TOOL_NAMES):
+        return "react"
     # LLM decides simple vs react
     from services.llm_proxy import chat_completion
     result = await chat_completion(
@@ -148,7 +154,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     augmented_msg = req.message + conv_history
 
     # Save user message + append conversation history
-    db.add(Conversation(project_id=req.project_id, role="user", content=msg))
+    db.add(Conversation(project_id=req.project_id, role="user", content=req.message))
     await db.commit()
     conv_result = await db.execute(
         select(Conversation).where(Conversation.project_id == req.project_id)
@@ -157,7 +163,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     history = "\n".join(f"{'User' if c.role=='user' else 'Asst'}: {c.content}"
                         for c in reversed(conv_result.scalars().all()))
     if history:
-        req.message += "\n\n## Recent conversation:\n" + history
+        augmented_msg += "\n\n## Recent conversation:\n" + history
 
     async def _respond(**kw):
         answer = kw.get("answer") or kw.get("explanation") or kw.get("question", "")
@@ -184,12 +190,12 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     brain = AgentBrain(db)
 
     # Check for pending clarification
-    agent_session = await brain._get_or_create_primary(req.project_id, req.message)
+    agent_session = await brain._get_or_create_primary(req.project_id, augmented_msg)
     pending = None
     if agent_session.current_state:
         pending = AgentBrain._parse_pending(agent_session.current_state)
 
-    mode = await _detect_mode(req.message, has_files)
+    mode = await _detect_mode(augmented_msg, has_files)
 
     # Resume mode (clear pending, fresh exploration)
     if mode == "resume":
@@ -197,7 +203,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
             agent_session.current_state = ""
             await db.commit()
             pending = None
-        result = await brain.process_request(req.project_id, req.message, backend=req.backend)
+        result = await brain.process_request(req.project_id, augmented_msg, backend=req.backend)
         if result.get("explanation"):
             return await _respond(
                 answer=result["explanation"],
@@ -209,14 +215,14 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
 
     if pending:
         # User is responding to a clarification question
-        pending["history"].append({"a": req.message})
+        pending["history"].append({"a": augmented_msg})
         ctx_lines = [f"Demande originale: {pending['original']}"]
         for h in pending["history"]:
             if "q" in h and "a" in h:
                 ctx_lines.append(f"Q: {h['q']}  A: {h['a']}")
             elif "q" in h:
                 ctx_lines.append(f"Q: {h['q']}")
-        ctx_lines.append(f"Reponse utilisateur: {req.message}")
+        ctx_lines.append(f"Reponse utilisateur: {augmented_msg}")
         full_message = "\n".join(ctx_lines)
 
         # Check if we need further clarification
@@ -232,14 +238,14 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
         # Clear enough — proceed with generation
         agent_session.current_state = ""
         await db.commit()
-        req.message = full_message
+        augmented_msg = full_message
     else:
         context_str = f"Project: {project.name}\nFiles: {', '.join(file_names) if file_names else '(empty)'}"
 
-    mode = await _detect_mode(req.message, has_files)
+    mode = await _detect_mode(augmented_msg, has_files)
 
     if mode == "resume":
-        result = await brain.process_request(req.project_id, req.message, backend=req.backend)
+        result = await brain.process_request(req.project_id, augmented_msg, backend=req.backend)
         if result.get("explanation"):
             return await _respond(
                 answer=result["explanation"],
@@ -250,9 +256,9 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
 
     # Clarification (only for non-resume modes — resume is inherently open-ended)
     if not pending and mode != "resume":
-        sub = await brain.clarify_if_needed(req.message, context_str, req.backend)
+        sub = await brain.clarify_if_needed(augmented_msg, context_str, req.backend)
         if sub.get("needs"):
-            pending_data = {"original": req.message, "history": [{"q": sub["question"]}]}
+            pending_data = {"original": augmented_msg, "history": [{"q": sub["question"]}]}
             agent_session.current_state = AgentBrain._pending_key(pending_data)
             agent_session.updated_at = datetime.now(timezone.utc)
             await db.commit()
@@ -262,11 +268,11 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
         target = ""
         if has_files:
             for fname in file_names:
-                if fname.replace(".", " ").replace("_", " ") in req.message.lower() or fname in req.message:
+                if fname.replace(".", " ").replace("_", " ") in augmented_msg.lower() or fname in augmented_msg:
                     target = fname
                     break
         result = await brain.process_request(
-            req.project_id, req.message, backend=req.backend, target_file=target
+            req.project_id, augmented_msg, backend=req.backend, target_file=target
         )
         if result.get("explanation"):
             return await _respond(
@@ -289,7 +295,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
             f"Description: {project.description or ''}"
         )
         agent = AgentReAct(req.project_id, req.backend, max_steps=50)
-        result = await agent.run(req.message, context_str)
+        result = await agent.run(augmented_msg, context_str)
         return await _respond(
             answer=result.get("answer", ""),
             code=result.get("code", ""),
@@ -306,7 +312,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
         f"Description: {project.description or ''}"
     )
     agent = AgentReAct(req.project_id, req.backend, max_steps=50)
-    result = await agent.run(req.message, context_str)
+    result = await agent.run(augmented_msg, context_str)
     return await _respond(
         answer=result.get("answer", ""),
         code=result.get("code", ""),
@@ -331,6 +337,20 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
         db.add(Conversation(project_id=req.project_id, role="user", content=req.message))
         await db.commit()
 
+        # Load conversation history for context
+        conv_result = await db.execute(
+            select(Conversation).where(Conversation.project_id == req.project_id)
+                .order_by(Conversation.created_at.desc()).limit(10)
+        )
+        conv_msgs = list(reversed(conv_result.scalars().all()))
+        conv_history = ""
+        if conv_msgs:
+            conv_history = "\n\n## Conversation précédente:\n" + "\n".join(
+                f"{'Utilisateur' if c.role == 'user' else 'Assistant'}: {c.content}"
+                for c in conv_msgs[-5:]
+            )
+        augmented_msg = req.message + conv_history
+
         # Gather files
         files_result = await db.execute(
             select(Artifact).where(Artifact.project_id == req.project_id)
@@ -347,7 +367,7 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
                 file_names = [str(f.relative_to(pdir)) for f in disk_files[:50]]
 
         brain = AgentBrain(db)
-        mode = await _detect_mode(req.message, has_files)
+        mode = await _detect_mode(augmented_msg, has_files)
 
         yield f"data: {json.dumps({'type': 'mode', 'mode': mode})}\n\n"
 
@@ -363,7 +383,7 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
                 yield f"data: {json.dumps(ev)}\n\n"
 
         if mode in ("simple", "resume"):
-            result = await brain.process_request(req.project_id, req.message, backend=req.backend)
+            result = await brain.process_request(req.project_id, augmented_msg, backend=req.backend)
             explanation = result.get("explanation", "")
             if explanation:
                 yield f"data: {json.dumps({'type': 'explanation', 'text': explanation})}\n\n"
@@ -388,14 +408,14 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
             async def _run_agent():
                 try:
                     result = await asyncio.wait_for(
-                        agent.run(req.message, context_str, step_callback=step_cb),
-                        timeout=300  # 5 min max
+                        agent.run(augmented_msg, context_str, step_callback=step_cb),
+                        timeout=300
                     )
                     return result
                 except asyncio.TimeoutError:
                     return {"answer": "Agent timed out after 5 minutes.", "steps": []}
                 finally:
-                    await queue.put(({}, True))  # always signal end, even on error
+                    await queue.put(({}, True))
 
             agent_task = asyncio.create_task(_run_agent())
             async for ev in _drain_queue():
@@ -405,29 +425,7 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
             if result.get("code"):
                 yield f"data: {json.dumps({'type': 'code', 'code': result['code'], 'file_path': result.get('file_path', '')})}\n\n"
         else:
-            from services.agent_react import AgentReAct
-            context_str = (
-                f"## Project: {project.name}\n"
-                f"Files: {', '.join(file_names) if file_names else '(empty)'}\n"
-                f"Description: {project.description or ''}"
-            )
-            agent = AgentReAct(req.project_id, req.backend, max_steps=50)
-
-            async def step_cb(steps, step_info, current, total):
-                await _emit("step", step=current, total=total,
-                            tool=step_info.get("tool"),
-                            result=step_info.get("result", ""))
-
-            async def _run_agent():
-                result = await agent.run(req.message, context_str, step_callback=step_cb)
-                await queue.put(({}, True))
-                return result
-
-            agent_task = asyncio.create_task(_run_agent())
-            async for ev in _drain_queue():
-                yield ev
-            result = await agent_task
-            answer = result.get("answer", "")
+            answer = "Unknown mode — try rephrasing your request."
 
         # Save assistant reply
         if answer:

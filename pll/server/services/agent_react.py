@@ -65,6 +65,10 @@ Search file contents with regex.
 Execute a shell command (git, npm, etc.).
 {{"tool": "exec_shell", "args": {{"cmd": "npm install"}}}}
 
+### probe_path
+Check if a file or directory exists on the filesystem. Accepts absolute paths (C:\...) or relative paths.
+{{"tool": "probe_path", "args": {{"path": "D:\\project\\src"}}}}
+
 ### git_status
 Check git status.
 
@@ -195,7 +199,6 @@ class AgentReAct:
     async def _tool_write_file(self, args: dict) -> str:
         path = args.get("path", "")
         content = args.get("content", "")
-        print(f"[PLL_REACT] write_file called: path='{path}', content_len={len(content)}, has_file_markers={'# file:' in content}")
         if not content.strip():
             return f"ERROR: Refusing to write empty file '{path}'. Provide complete content."
         import re as _re
@@ -652,6 +655,24 @@ class AgentReAct:
         except Exception as e:
             return f"ERROR: {e}"
 
+    async def _tool_probe_path(self, args: dict) -> str:
+        """Check if a path exists (file or directory). Accepts absolute or relative paths."""
+        path = args.get("path", "")
+        if not path:
+            return "ERROR: No path provided"
+        from pathlib import Path
+        fp = Path(path).resolve()
+        if not fp.exists():
+            return f"Path does not exist: {path}"
+        if fp.is_dir():
+            entries = [e.name for e in fp.iterdir() if not e.name.startswith(".")]
+            children = "\n".join(f"  {'📁' if (fp/e).is_dir() else '📄'} {e}" for e in sorted(entries)[:30])
+            extra = f"\n  ... and {len(entries) - 30} more" if len(entries) > 30 else ""
+            return f"📁 Directory: {fp}\n{children}{extra}"
+        else:
+            size = fp.stat().st_size
+            return f"📄 File: {fp} ({size} bytes)"
+
     async def _tool_diff_files(self, args: dict) -> str:
         a = args.get("a", "")
         b = args.get("b", "")
@@ -824,8 +845,11 @@ class AgentReAct:
         """ReAct loop. step_callback(steps_list, step_info, current_step, max_steps) is called after each tool execution for SSE."""
         system = (
             "You are an AI coding assistant that thinks in PLL.\n\n"
-            "PLL is for planning — always follow PLL with a JSON tool call.\n"
-            "Never output PLL alone without a tool call.\n\n"
+            "PLL is for planning — follow PLL with a JSON tool call.\n"
+            "You can also respond with plain text (no PLL, no tool) when answering a question.\n\n"
+            "IMPORTANT: The tool names below (write_file, probe_path, etc.) are BUILT-IN COMMANDS.\n"
+            "When the user says \"use probe_path\" or \"call write_file\", they mean the built-in tool,\n"
+            "NOT a file to create. Never write a file whose name matches a built-in tool.\n\n"
             "PLL quick reference:\n"
             '  v x != "text"           - variable\n'
             '  v x != ?("prompt")      - LLM belief\n'
@@ -843,14 +867,34 @@ class AgentReAct:
         steps = []
         current_code = ""
         current_file = ""
+        accumulated_answer = ""
 
         for step in range(self.max_steps):
             response = await self._call_llm(system, messages)
             messages.append({"role": "assistant", "content": response})
 
+            # Extract text before the first tool call as thinking/answer
+            text_before_call = response.strip()
+            first_brace = text_before_call.find('{"tool":')
+            if first_brace >= 0:
+                text_before_call = text_before_call[:first_brace].strip()
+            if text_before_call and not text_before_call.startswith('v ') and not text_before_call.startswith('{'):
+                accumulated_answer = text_before_call
+
             tool_calls = self._parse_tool_calls(response)
             if not tool_calls:
-                return {"answer": response, "steps": steps, "code": response, "file_path": ""}
+                final = {"answer": response, "steps": steps, "code": response, "file_path": ""}
+                if accumulated_answer:
+                    final["thinking"] = accumulated_answer
+                return final
+
+            # If agent has meaningful text AND also tool calls, respond with the text now
+            # But only after at least one tool has been executed (don't cut off first response)
+            if accumulated_answer and len(steps) > 0:
+                final = {"answer": accumulated_answer, "steps": steps, "code": current_code, "file_path": current_file}
+                if step_callback:
+                    await step_callback(steps, {"tool": "final_answer", "args": {}, "result": accumulated_answer}, step + 1, self.max_steps)
+                return final
 
             # Group tools: run independent (read) tools in parallel, sequential ones one by one
             READ_ONLY = {"read_file", "list_dir", "glob_files", "grep_files", "search_vault",
@@ -884,15 +928,15 @@ class AgentReAct:
 
                 parallel_results = await asyncio.gather(*[_run_one(tc) for tc in parallel_tools])
                 for pr in parallel_results:
-                    steps.append({"step": step + 1, **pr})
+                    steps.append({"step": step + 1, **pr, "thinking": accumulated_answer})
                     last_result = pr["result"]
                     if step_callback:
-                        await step_callback(steps, pr, step + 1, self.max_steps)
+                        await step_callback(steps, {"thinking": accumulated_answer, **pr}, step + 1, self.max_steps)
 
             for tc in sequential_tools:
                 tool, args = tc.get("tool", ""), tc.get("args", {})
                 result = await self._execute_tool(tool, args)
-                step_info = {"tool": tool, "args": args, "result": result[:300]}
+                step_info = {"tool": tool, "args": args, "result": result[:300], "thinking": accumulated_answer}
                 steps.append({"step": step + 1, **step_info})
                 last_result = step_info["result"]
                 if step_callback:
@@ -903,7 +947,10 @@ class AgentReAct:
             if len(messages) > 12:
                 messages = [messages[0]] + messages[-10:]
 
-        return {"answer": "Max steps reached without final answer.", "steps": steps, "code": current_code, "file_path": current_file}
+        final = {"answer": "Max steps reached without final answer.", "steps": steps, "code": current_code, "file_path": current_file}
+        if accumulated_answer:
+            final["thinking"] = accumulated_answer
+        return final
 
     @staticmethod
     def _parse_tool_call(text: str) -> dict | None:
