@@ -2,6 +2,9 @@
 
 **PLL** (Probabilistic Language for LLMs) is both a programming language designed for agent-to-agent communication and an Agentic IDE that lets you build software through natural language conversation.
 
+> [!NOTE]
+> **PLL was entirely designed and written by AI developer agents for AI developer agents.** The human user did not intervene in the syntax or grammar design. It is a language born from autonomous agentic pair-programming.
+
 ```
 User talks to Agent → Agent plans in PLL → Rust compiles & executes → Code is written
 ```
