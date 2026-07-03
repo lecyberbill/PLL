@@ -37,9 +37,9 @@ Comparison of individual tool calling payload sizes.
 | Metric | JSON Mode | PLL Mode | PLL Savings % |
 | :--- | :---: | :---: | :---: |
 | **Input Tokens (Prompt)** | 600 | 124 | **79.3%** |
-| **Output Tokens (Completion)** | 193 | 305 | **-58.0%** |
-| **Total Tokens** | 793 | 429 | **45.9%** |
-| **Generation Time** | 8.05s | 10.25s | **-27.4%** |
+| **Output Tokens (Completion)** | 338 | 127 | **62.4%** |
+| **Total Tokens** | 938 | 251 | **73.2%** |
+| **Generation Time** | 12.78s | 6.11s | **52.2%** |
 
 ## 4. Live LM Studio Generation (Complex Stress Test)
 **Query**: "You need to perform a full refactor: read public/index.html, public/js/app.js, public/css/style.css, then write a new dark theme style in public/css/theme.css, write a helper format function (formatTemp) and an input cleaning regex in public/js/utils.js, run 'npm run build', check if 'dist/index.html' exists, and return a final answer. Generate all the necessary tool calls sequentially in one go."
@@ -47,9 +47,9 @@ Comparison of individual tool calling payload sizes.
 | Metric | JSON Mode | PLL Mode | PLL Savings % |
 | :--- | :---: | :---: | :---: |
 | **Input Tokens (Prompt)** | 671 | 195 | **70.9%** |
-| **Output Tokens (Completion)** | 800 | 800 | **0.0%** |
-| **Total Tokens** | 1471 | 995 | **32.4%** |
-| **Generation Time** | 24.73s | 23.29s | **5.8%** |
+| **Output Tokens (Completion)** | 4096 | 3027 | **26.1%** |
+| **Total Tokens** | 4767 | 3222 | **32.4%** |
+| **Generation Time** | 136.41s | 96.51s | **29.3%** |
 
 ### Output Samples (Stress Test)
 **JSON Output**:
@@ -60,4 +60,15 @@ Comparison of individual tool calling payload sizes.
 **PLL Output**:
 ```pll
 
+
+v plan != "read public files"
+read_file("public/index.html")
+read_file("public/js/app.js")
+read_file("public/css/style.css")
+v plan != "write dark theme and utils"
+write_file("public/css/theme.css", "/* Dark Theme */\nbody {\n  background-color: #121212;\n  color: #e0e0e0;\n}\n\n.dark-theme {\n  background-color: #121212;\n  color: #ffffff;\n}")
+write_file("public/js/utils.js", "export function formatTemp(temp) {\n  return String(temp);\n}\n\nconst inputCleaningRegex = /[^a-zA-Z0-9\\s]/g;")
+v plan != "run build and check"
+exec_shell("npm run build")
+probe_path("dist/index.html")
 ```

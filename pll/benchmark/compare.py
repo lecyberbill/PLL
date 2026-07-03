@@ -259,7 +259,7 @@ def query_local_llm(system: str, prompt: str) -> tuple:
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.1,
-        "max_tokens": 800
+        "max_tokens": 4096
     }
     data = json.dumps(payload).encode("utf-8")
     req = Request(
@@ -269,7 +269,7 @@ def query_local_llm(system: str, prompt: str) -> tuple:
     )
     start_time = time.time()
     try:
-        with urlopen(req, timeout=60) as response:
+        with urlopen(req, timeout=300) as response:
             res_data = json.loads(response.read().decode("utf-8"))
             duration = time.time() - start_time
             choice = res_data["choices"][0]["message"]["content"]
