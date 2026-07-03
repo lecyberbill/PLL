@@ -1,5 +1,5 @@
 """
-[WFGY] Zone: SAFE | λ: 0.2 | Fallbacks: 2/AST Parsing Error Fallback, XML Fallback | Action: Migrate tool calling from JSON to pure PLL function calls with XML fallback
+[WFGY] Zone: SAFE | λ: 0.5 | Fallbacks: 4/AST, XML, Simple XML, Backticks Fallback | Action: Support backticks as string quotes in tool calling & scope file tools
 """
 import json
 import re
@@ -25,7 +25,15 @@ probe_path("D:\\folder")             # check if path exists
 def parse_write_file_fallback(call_str: str) -> dict | None:
     import re
     call_str_clean = call_str.strip()
-    # Try triple double quotes first
+    # Try triple backticks first
+    m = re.match(r'^write_file\s*\(\s*["\']([^"\']+)["\']\s*,\s*`{3}([\s\S]*?)`{3}\s*\)', call_str_clean)
+    if m:
+        return {"tool": "write_file", "args_list": [m.group(1), m.group(2)]}
+    # Try single backticks
+    m = re.match(r'^write_file\s*\(\s*["\']([^"\']+)["\']\s*,\s*`([\s\S]*?)`\s*\)', call_str_clean)
+    if m:
+        return {"tool": "write_file", "args_list": [m.group(1), m.group(2)]}
+    # Try triple double quotes
     m = re.match(r'^write_file\s*\(\s*["\']([^"\']+)["\']\s*,\s*"""([\s\S]*?)"""\s*\)', call_str_clean)
     if m:
         return {"tool": "write_file", "args_list": [m.group(1), m.group(2)]}
@@ -195,6 +203,23 @@ class AgentReAct:
                 self._allowed_dir = None
         return self._allowed_dir
 
+    async def _resolve_path(self, path_str: str):
+        """Resolve a path relative to the project directory, with fallback and safety checks. Returns a Path object."""
+        from pathlib import Path
+        allowed = await self._project_dir()
+        if allowed:
+            fp = Path(path_str)
+            if not fp.is_absolute():
+                fp = (allowed / path_str).resolve()
+            else:
+                fp = fp.resolve()
+            if not str(fp).startswith(str(allowed)):
+                raise ValueError(f"Path '{path_str}' is outside the project directory")
+            return fp
+        else:
+            from routes.fs import _resolve
+            return _resolve(path_str)
+
     async def _assert_allowed(self, path_str: str, action: str = "") -> str | None:
         """Check path is within project scope. Return None if OK, or a permission message."""
         from routes.fs import _resolve
@@ -215,7 +240,7 @@ class AgentReAct:
             "final_answer", "rename_file", "zip_project"
         }
 
-        # Fallback: Parse XML-style tool calls (e.g. from DeepSeek or internal formats)
+        # 1. Fallback: Parse XML-style tool calls (e.g. from DeepSeek or internal formats)
         if "<tool_call>" in text:
             import re as _re
             pattern = _re.compile(r'<tool_call>(.*?)</tool_call>', _re.DOTALL)
@@ -236,6 +261,54 @@ class AgentReAct:
             if calls:
                 return calls
 
+        # 2. Fallback: Parse direct simple XML tags for known tools (e.g. <read_file>path</read_file>)
+        import re as _re
+        for tool in known_tools:
+            pattern = _re.compile(rf'<{tool}(?:\s+([^>]*))?>([\s\S]*?)</{tool}>', _re.IGNORECASE)
+            for match in pattern.finditer(text):
+                attrs_str = match.group(1) or ""
+                inner_content = match.group(2).strip()
+                args = {}
+                if attrs_str:
+                    path_attr = _re.search(r'path=["\']([^"\']+)["\']', attrs_str)
+                    if path_attr:
+                        args["path"] = path_attr.group(1)
+                    cmd_attr = _re.search(r'cmd=["\']([^"\']+)["\']', attrs_str)
+                    if cmd_attr:
+                        args["cmd"] = cmd_attr.group(1)
+                path_tag = _re.search(r'<path>([\s\S]*?)</path>', inner_content, _re.IGNORECASE)
+                content_tag = _re.search(r'<content>([\s\S]*?)</content>', inner_content, _re.IGNORECASE)
+                if path_tag:
+                    args["path"] = path_tag.group(1).strip()
+                if content_tag:
+                    args["content"] = content_tag.group(1)
+                if tool == "write_file" and "content" not in args:
+                    if "path" in args:
+                        args["content"] = inner_content
+                    else:
+                        lines = [line for line in inner_content.splitlines() if line.strip()]
+                        if lines:
+                            first_line = lines[0].strip()
+                            if (first_line.startswith("/") or first_line.startswith("./") or 
+                                _re.search(r'^[a-zA-Z0-9_\-\.\/]+$', first_line)):
+                                args["path"] = first_line
+                                args["content"] = "\n".join(inner_content.splitlines()[1:])
+                            else:
+                                args["path"] = first_line
+                                args["content"] = "\n".join(inner_content.splitlines()[1:])
+                if not args and inner_content:
+                    if tool in ("read_file", "delete_file", "list_dir", "probe_path"):
+                        args["path"] = inner_content
+                    elif tool == "exec_shell":
+                        args["cmd"] = inner_content
+                    elif tool == "final_answer":
+                        args["text"] = inner_content
+                if args:
+                    calls.append({"tool": tool, "args": args})
+
+        if calls:
+            return calls
+
         text_len = len(text)
         i = 0
         while i < text_len:
@@ -252,7 +325,7 @@ class AgentReAct:
                 
             pos = found_pos + len(found_tool) + 1
             depth = 1
-            in_quote = None  # None, '"', "'", '"""', "'''"
+            in_quote = None  # None, '"', "'", '"""', "'''", '`', '```'
             quote_esc = False
             
             while pos < text_len and depth > 0:
@@ -264,10 +337,15 @@ class AgentReAct:
                     elif text[pos:pos+3] == "'''":
                         in_quote = "'''"
                         pos += 2
+                    elif text[pos:pos+3] == '```':
+                        in_quote = '```'
+                        pos += 2
                     elif char == '"':
                         in_quote = '"'
                     elif char == "'":
                         in_quote = "'"
+                    elif char == '`':
+                        in_quote = '`'
                     elif char == '(':
                         depth += 1
                     elif char == ')':
@@ -281,6 +359,9 @@ class AgentReAct:
                         in_quote = None
                         pos += 2
                     elif in_quote == "'''" and text[pos:pos+3] == "'''":
+                        in_quote = None
+                        pos += 2
+                    elif in_quote == '```' and text[pos:pos+3] == '```':
                         in_quote = None
                         pos += 2
                     elif char == in_quote:
@@ -321,14 +402,7 @@ class AgentReAct:
     async def _tool_read_file(self, args: dict) -> str:
         path = args.get("path", "")
         try:
-            allowed = await self._project_dir()
-            if allowed:
-                fp = (allowed / path).resolve()
-                if not str(fp).startswith(str(allowed)):
-                    return f"ERROR: Path '{path}' is outside the project directory"
-            else:
-                from routes.fs import _resolve
-                fp = _resolve(path)
+            fp = await self._resolve_path(path)
             if not fp.is_file():
                 return f"ERROR: File not found: {path}"
             content = fp.read_text(encoding="utf-8")
@@ -357,102 +431,102 @@ class AgentReAct:
             return msg
         # Strip single file header if present
         content = _re.sub(r'^#\s*file:\s*\S+\s*\r?\n?', '', content, count=1)
-        # Resolve relative to project directory, not BASE_DIR
-        allowed = await self._project_dir()
-        if allowed:
-            fp = (allowed / path).resolve()
-            if not str(fp).startswith(str(allowed)):
-                return f"ERROR: Path '{path}' is outside the project directory"
-        else:
-            from routes.fs import _resolve
-            fp = _resolve(path)
-        fp.parent.mkdir(parents=True, exist_ok=True)
-        fp.write_text(content, encoding="utf-8")
-        return f"Written {len(content)} bytes to {path}"
+        try:
+            fp = await self._resolve_path(path)
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_text(content, encoding="utf-8")
+            return f"Written {len(content)} bytes to {path}"
+        except Exception as e:
+            return f"ERROR: {e}"
 
     async def _tool_delete_file(self, args: dict) -> str:
         path = args.get("path", "")
-        from routes.fs import _resolve
-        fp = _resolve(path)
-        if not fp.exists():
-            return f"ERROR: Not found: {path}"
-        if fp.is_file():
-            fp.unlink()
-        else:
-            import shutil
-            shutil.rmtree(fp)
-        return f"Deleted {path}"
+        try:
+            fp = await self._resolve_path(path)
+            if not fp.exists():
+                return f"ERROR: Not found: {path}"
+            if fp.is_file():
+                fp.unlink()
+            else:
+                import shutil
+                shutil.rmtree(fp)
+            return f"Deleted {path}"
+        except Exception as e:
+            return f"ERROR: {e}"
 
     async def _tool_rename_file(self, args: dict) -> str:
         old = args.get("old_path", "")
         new = args.get("new_path", "")
-        from routes.fs import _resolve
-        old_fp = _resolve(old)
-        new_fp = _resolve(new)
-        if not old_fp.exists():
-            return f"ERROR: Not found: {old}"
-        new_fp.parent.mkdir(parents=True, exist_ok=True)
-        old_fp.rename(new_fp)
-        return f"Renamed {old} -> {new}"
+        try:
+            old_fp = await self._resolve_path(old)
+            new_fp = await self._resolve_path(new)
+            if not old_fp.exists():
+                return f"ERROR: Not found: {old}"
+            new_fp.parent.mkdir(parents=True, exist_ok=True)
+            old_fp.rename(new_fp)
+            return f"Renamed {old} -> {new}"
+        except Exception as e:
+            return f"ERROR: {e}"
 
     async def _tool_list_dir(self, args: dict) -> str:
         path = args.get("path", ".")
-        allowed = await self._project_dir()
-        if allowed:
-            fp = (allowed / path).resolve()
-        else:
-            from routes.fs import _resolve
-            fp = _resolve(path)
-        if not fp.is_dir():
-            return f"ERROR: Not a directory: {path}"
-        entries = []
-        for child in sorted(fp.iterdir()):
-            if child.name.startswith("."):
-                continue
-            t = "dir" if child.is_dir() else "file"
-            entries.append(f"  [{t}] {child.name}")
-        result = "\n".join(entries)
-        return f"Contents of {path}:\n{result}" if entries else f"{path} is empty"
+        try:
+            fp = await self._resolve_path(path)
+            if not fp.is_dir():
+                return f"ERROR: Not a directory: {path}"
+            entries = []
+            for child in sorted(fp.iterdir()):
+                if child.name.startswith("."):
+                    continue
+                t = "dir" if child.is_dir() else "file"
+                entries.append(f"  [{t}] {child.name}")
+            result = "\n".join(entries)
+            return f"Contents of {path}:\n{result}" if entries else f"{path} is empty"
+        except Exception as e:
+            return f"ERROR: {e}"
 
     async def _tool_glob_files(self, args: dict) -> str:
         pattern = args.get("pattern", "*")
         path = args.get("path", ".")
-        from routes.fs import _resolve
-        root = _resolve(path)
-        files = []
-        for fpath in sorted(root.rglob(pattern)):
-            rel = str(fpath.relative_to(root.parent))
-            files.append(f"  {rel} ({'dir' if fpath.is_dir() else 'file'})")
-        if not files:
-            return f"No files matching '{pattern}' in {path}"
-        return f"Glob '{pattern}' ({len(files)}):\n" + "\n".join(files)
+        try:
+            root = await self._resolve_path(path)
+            files = []
+            for fpath in sorted(root.rglob(pattern)):
+                rel = str(fpath.relative_to(root.parent))
+                files.append(f"  {rel} ({'dir' if fpath.is_dir() else 'file'})")
+            if not files:
+                return f"No files matching '{pattern}' in {path}"
+            return f"Glob '{pattern}' ({len(files)}):\n" + "\n".join(files)
+        except Exception as e:
+            return f"ERROR: {e}"
 
     async def _tool_grep_files(self, args: dict) -> str:
         pattern = args.get("pattern", "")
         path = args.get("path", ".")
         include = args.get("include", "")
         import re as re_mod
-        from routes.fs import _resolve
-        root = _resolve(path)
         try:
+            root = await self._resolve_path(path)
             regex = re_mod.compile(pattern, re_mod.IGNORECASE)
+            matches = []
+            for fpath in sorted(root.rglob("*")):
+                if not fpath.is_file():
+                    continue
+                if include and not fpath.match(include):
+                    continue
+                try:
+                    text = fpath.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    continue
+                for i, line in enumerate(text.split("\n"), 1):
+                    if regex.search(line):
+                        rel = str(fpath.relative_to(root.parent))
+                        matches.append(f"  {rel}:{i}  {line.strip()[:120]}")
+            if not matches:
+                return f"No matches for '{pattern}' in {path}"
+            return f"Grep '{pattern}' ({len(matches)} matches):\n" + "\n".join(matches[:50])
         except Exception as e:
-            return f"ERROR: Invalid regex: {e}"
-        matches = []
-        for fpath in sorted(root.rglob("*")):
-            if not fpath.is_file():
-                continue
-            if include and not fpath.match(include):
-                continue
-            try:
-                text = fpath.read_text(encoding="utf-8", errors="replace")
-            except Exception:
-                continue
-            for i, line in enumerate(text.split("\n"), 1):
-                if regex.search(line):
-                    rel = str(fpath.relative_to(root.parent))
-                    matches.append(f"  {rel}:{i}  {line.strip()[:120]}")
-        if not matches:
+            return f"ERROR: {e}"
             return f"No matches for '{pattern}' in {path}"
         return f"Grep '{pattern}' ({len(matches)} matches):\n" + "\n".join(matches[:50])
 
@@ -739,9 +813,8 @@ class AgentReAct:
         new = args.get("new", "")
         if not path or not old:
             return "ERROR: path and old are required"
-        from routes.fs import _resolve
         try:
-            fp = _resolve(path)
+            fp = await self._resolve_path(path)
             if not fp.is_file():
                 return f"ERROR: File not found: {path}"
             content = fp.read_text(encoding="utf-8")
@@ -800,27 +873,29 @@ class AgentReAct:
         path = args.get("path", "")
         if not path:
             return "ERROR: No path provided"
-        from pathlib import Path
-        fp = Path(path).resolve()
-        if not fp.exists():
-            return f"Path does not exist: {path}"
-        if fp.is_dir():
-            entries = [e.name for e in fp.iterdir() if not e.name.startswith(".")]
-            children = "\n".join(f"  {'📁' if (fp/e).is_dir() else '📄'} {e}" for e in sorted(entries)[:30])
-            extra = f"\n  ... and {len(entries) - 30} more" if len(entries) > 30 else ""
-            return f"📁 Directory: {fp}\n{children}{extra}"
-        else:
-            size = fp.stat().st_size
-            return f"📄 File: {fp} ({size} bytes)"
+        try:
+            fp = await self._resolve_path(path)
+            if not fp.exists():
+                return f"Path does not exist: {path}"
+            if fp.is_dir():
+                entries = [e.name for e in fp.iterdir() if not e.name.startswith(".")]
+                children = "\n".join(f"  {'📁' if (fp/e).is_dir() else '📄'} {e}" for e in sorted(entries)[:30])
+                extra = f"\n  ... and {len(entries) - 30} more" if len(entries) > 30 else ""
+                return f"📁 Directory: {fp}\n{children}{extra}"
+            else:
+                size = fp.stat().st_size
+                return f"📄 File: {fp} ({size} bytes)"
+        except Exception as e:
+            return f"ERROR: {e}"
 
     async def _tool_diff_files(self, args: dict) -> str:
         a = args.get("a", "")
         b = args.get("b", "")
         if not a or not b:
             return "ERROR: a and b paths required"
-        from routes.fs import _resolve
         try:
-            fa, fb = _resolve(a), _resolve(b)
+            fa = await self._resolve_path(a)
+            fb = await self._resolve_path(b)
             if not fa.is_file():
                 return f"ERROR: File not found: {a}"
             if not fb.is_file():
@@ -840,85 +915,83 @@ class AgentReAct:
         path = args.get("path", ".")
         if not name:
             return "ERROR: No symbol name provided"
-        from routes.fs import _resolve
         import re
-        root = _resolve(path)
-        if not root.is_dir():
-            return f"ERROR: Not a directory: {path}"
-        skip_dirs = {".venv", "__pycache__", "node_modules", ".git", "target", ".pytest_cache", "migrations"}
-        results = []
-        patterns = [
-            rf"fn\s+{re.escape(name)}\b",
-            rf"def\s+{re.escape(name)}\b",
-            rf"class\s+{re.escape(name)}\b",
-            rf"async\s+def\s+{re.escape(name)}\b",
-            rf"fun\s+{re.escape(name)}\b",
-            rf"t\s+{re.escape(name)}\b",
-            rf"const\s+{re.escape(name)}\b",
-            rf"let\s+{re.escape(name)}\b",
-        ]
-        compiled = re.compile("|".join(patterns), re.IGNORECASE)
-        for fpath in root.rglob("*"):
-            if any(p in fpath.parts for p in skip_dirs):
-                continue
-            if not fpath.is_file():
-                continue
-            try:
-                text = fpath.read_text(encoding="utf-8", errors="replace")
-            except Exception:
-                continue
-            for i, line in enumerate(text.split("\n"), 1):
-                if compiled.search(line):
-                    rel = str(fpath.relative_to(root.parent))
-                    results.append(f"  {rel}:{i}  {line.strip()[:120]}")
-                    if len(results) >= 20:
-                        return "\n".join(results)
-        return "\n".join(results[:20]) if results else f"Symbol '{name}' not found."
+        try:
+            root = await self._resolve_path(path)
+            if not root.is_dir():
+                return f"ERROR: Not a directory: {path}"
+            skip_dirs = {".venv", "__pycache__", "node_modules", ".git", "target", ".pytest_cache", "migrations"}
+            results = []
+            patterns = [
+                rf"fn\s+{re.escape(name)}\b",
+                rf"def\s+{re.escape(name)}\b",
+                rf"class\s+{re.escape(name)}\b",
+                rf"async\s+def\s+{re.escape(name)}\b",
+                rf"fun\s+{re.escape(name)}\b",
+                rf"t\s+{re.escape(name)}\b",
+                rf"const\s+{re.escape(name)}\b",
+                rf"let\s+{re.escape(name)}\b",
+            ]
+            compiled = re.compile("|".join(patterns), re.IGNORECASE)
+            for fpath in root.rglob("*"):
+                if any(p in fpath.parts for p in skip_dirs):
+                    continue
+                if not fpath.is_file():
+                    continue
+                try:
+                    text = fpath.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    continue
+                for i, line in enumerate(text.split("\n"), 1):
+                    if compiled.search(line):
+                        rel = str(fpath.relative_to(root.parent))
+                        results.append(f"  {rel}:{i}  {line.strip()[:120]}")
+                        if len(results) >= 20:
+                            return "\n".join(results)
+            return "\n".join(results[:20]) if results else f"Symbol '{name}' not found."
+        except Exception as e:
+            return f"ERROR: {e}"
 
     async def _tool_tree(self, args: dict) -> str:
         path = args.get("path", ".")
-        allowed = await self._project_dir()
-        if allowed:
-            from pathlib import Path
-            root = (allowed / path).resolve()
-        else:
-            from routes.fs import _resolve
-            root = _resolve(path)
-        if not root.is_dir():
-            return f"ERROR: Not a directory: {path}"
-        skip = {".venv", "__pycache__", "node_modules", ".git", "target", ".pytest_cache", ".mypy_cache"}
-        lines = [f"📁 {root.name}"]
-        def _walk(dir_path: Path, prefix: str = ""):
-            entries = sorted(dir_path.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower()))
-            entries = [e for e in entries if e.name not in skip]
-            for i, entry in enumerate(entries):
-                is_last = i == len(entries) - 1
-                connector = "└── " if is_last else "├── "
-                if entry.is_dir():
-                    lines.append(f"{prefix}{connector}📁 {entry.name}/")
-                    ext = "    " if is_last else "│   "
-                    if len(lines) < 80:
-                        _walk(entry, prefix + ext)
-                elif entry.is_file():
-                    size = entry.stat().st_size
-                    label = entry.name
-                    if size > 1024 * 1024:
-                        label = f"{entry.name} ({size // (1024*1024)}MB)"
-                    elif size > 1024:
-                        label = f"{entry.name} ({size // 1024}KB)"
-                    elif size > 0:
-                        label = f"{entry.name} ({size}B)"
-                    lines.append(f"{prefix}{connector}📄 {label}")
-        _walk(root)
-        return "\n".join(lines[:80]) + ("\n..." if len(lines) > 80 else "")
+        try:
+            root = await self._resolve_path(path)
+            if not root.is_dir():
+                return f"ERROR: Not a directory: {path}"
+            skip = {".venv", "__pycache__", "node_modules", ".git", "target", ".pytest_cache", ".mypy_cache"}
+            lines = [f"📁 {root.name}"]
+            def _walk(dir_path: Path, prefix: str = ""):
+                entries = sorted(dir_path.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower()))
+                entries = [e for e in entries if e.name not in skip]
+                for i, entry in enumerate(entries):
+                    is_last = i == len(entries) - 1
+                    connector = "└── " if is_last else "├── "
+                    if entry.is_dir():
+                        lines.append(f"{prefix}{connector}📁 {entry.name}/")
+                        ext = "    " if is_last else "│   "
+                        if len(lines) < 80:
+                            _walk(entry, prefix + ext)
+                    elif entry.is_file():
+                        size = entry.stat().st_size
+                        label = entry.name
+                        if size > 1024 * 1024:
+                            label = f"{entry.name} ({size // (1024*1024)}MB)"
+                        elif size > 1024:
+                            label = f"{entry.name} ({size // 1024}KB)"
+                        elif size > 0:
+                            label = f"{entry.name} ({size}B)"
+                        lines.append(f"{prefix}{connector}📄 {label}")
+            _walk(root)
+            return "\n".join(lines[:80]) + ("\n..." if len(lines) > 80 else "")
+        except Exception as e:
+            return f"ERROR: {e}"
 
     async def _tool_count_tokens(self, args: dict) -> str:
         path = args.get("path", "")
         if not path:
             return "ERROR: No path provided"
-        from routes.fs import _resolve
         try:
-            fp = _resolve(path)
+            fp = await self._resolve_path(path)
             if not fp.exists():
                 return f"ERROR: Not found: {path}"
             if fp.is_dir():
@@ -946,9 +1019,8 @@ class AgentReAct:
         end = args.get("end", None)
         if not path:
             return "ERROR: No path provided"
-        from routes.fs import _resolve
         try:
-            fp = _resolve(path)
+            fp = await self._resolve_path(path)
             if not fp.is_file():
                 return f"ERROR: Not found: {path}"
             lines = fp.read_text(encoding="utf-8").split("\n")
@@ -966,11 +1038,10 @@ class AgentReAct:
 
     async def _tool_zip_project(self, args: dict) -> str:
         output = args.get("output", "project.zip")
-        from routes.fs import _resolve
         import zipfile
         try:
-            root = _resolve(".")
-            zip_path = _resolve(output)
+            root = await self._resolve_path(".")
+            zip_path = await self._resolve_path(output)
             with zipfile.ZipFile(str(zip_path), "w", zipfile.ZIP_DEFLATED) as zf:
                 for f in sorted(root.rglob("*")):
                     if f.is_file() and ".git" not in f.parts and "__pycache__" not in f.parts:
@@ -1057,30 +1128,33 @@ class AgentReAct:
             # Run independent tools in parallel
             parallel_tools = [tc for tc in tool_calls if tc.get("tool") in READ_ONLY]
             sequential_tools = [tc for tc in tool_calls if tc.get("tool") not in READ_ONLY]
-            last_result = "done"
+            all_results = []
 
             if parallel_tools:
                 async def _run_one(tc):
                     tool, args = tc.get("tool", ""), tc.get("args", {})
                     result = await self._execute_tool(tool, args)
-                    return {"tool": tool, "args": args, "result": result[:300]}
+                    return {"tool": tool, "args": args, "result": result}
 
                 parallel_results = await asyncio.gather(*[_run_one(tc) for tc in parallel_tools])
                 for pr in parallel_results:
-                    steps.append({"step": step + 1, **pr, "thinking": accumulated_answer})
-                    last_result = pr["result"]
+                    step_result_clipped = pr["result"][:300] + ("..." if len(pr["result"]) > 300 else "")
+                    steps.append({"step": step + 1, "tool": pr["tool"], "args": pr["args"], "result": step_result_clipped, "thinking": accumulated_answer})
+                    all_results.append(f"Tool {pr['tool']} result:\n{pr['result']}")
                     if step_callback:
-                        await step_callback(steps, {"thinking": accumulated_answer, **pr}, step + 1, self.max_steps)
+                        await step_callback(steps, {"thinking": accumulated_answer, "tool": pr["tool"], "args": pr["args"], "result": step_result_clipped}, step + 1, self.max_steps)
 
             for tc in sequential_tools:
                 tool, args = tc.get("tool", ""), tc.get("args", {})
                 result = await self._execute_tool(tool, args)
-                step_info = {"tool": tool, "args": args, "result": result[:300], "thinking": accumulated_answer}
+                result_clipped = result[:300] + ("..." if len(result) > 300 else "")
+                step_info = {"tool": tool, "args": args, "result": result_clipped, "thinking": accumulated_answer}
                 steps.append({"step": step + 1, **step_info})
-                last_result = step_info["result"]
+                all_results.append(f"Tool {tool} result:\n{result}")
                 if step_callback:
                     await step_callback(steps, step_info, step + 1, self.max_steps)
 
+            last_result = "\n\n".join(all_results) if all_results else "done"
             messages.append({"role": "user", "content": f"Result:\n{last_result}\n\nContinue thinking in PLL. If you have finished the user's request, call final_answer(text). Otherwise, call the next tool:"})
 
             if len(messages) > 12:

@@ -1,4 +1,5 @@
 """
+[WFGY] Zone: SAFE | λ: 0.1 | Fallbacks: 1/DP_API_KEY Uppercase Fallback | Action: Support uppercase DP_API_KEY environment variable
 LLM Proxy Service
 
 Supports two backends:
@@ -32,7 +33,7 @@ if _env_path.exists():
 LM_STUDIO_URL = os.getenv("PLL_LM_URL", "http://localhost:1234/v1/chat/completions")
 LM_STUDIO_MODELS_URL = os.getenv("PLL_LM_MODELS_URL", "http://localhost:1234/v1/models")
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_API_KEY = os.getenv("Dp_API_KEY", "")
+DEEPSEEK_API_KEY = os.getenv("Dp_API_KEY", os.getenv("DP_API_KEY", ""))
 DEFAULT_BACKEND = os.getenv("PLL_LLM_BACKEND", "deepseek" if DEEPSEEK_API_KEY else "lmstudio")
 
 # ---------- Few-shot examples ----------
