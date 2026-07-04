@@ -51,6 +51,8 @@ const elBtnSettingsClose = document.getElementById('btn-settings-close');
 const elSettingsBackend = document.getElementById('settings-backend');
 const elSettingsSessionSelect = document.getElementById('settings-session-select');
 const elBtnNewSession = document.getElementById('btn-new-session');
+const elSettingsEnableGca = document.getElementById('settings-enable-gca');
+const elTabBtnGca = document.getElementById('tab-btn-gca');
 const elGcaStatus = document.getElementById('gca-status');
 const elGcaVault = document.getElementById('gca-vault');
 const elPackagesList = document.getElementById('packages-list');
@@ -664,8 +666,24 @@ async function sendAgenticMessage() {
     }
 }
 
+function updateGcaTabVisibility(enabled) {
+    if (!elTabBtnGca) return;
+    if (enabled) {
+        elTabBtnGca.style.display = '';
+    } else {
+        elTabBtnGca.style.display = 'none';
+        const activeTab = document.querySelector('.tab-btn.active');
+        if (activeTab && activeTab.dataset.tab === 'tab-gca') {
+            switchTab('tab-agentic');
+        }
+    }
+}
+
 async function main() {
     try {
+        const gcaEnabled = localStorage.getItem('pll-enable-gca') === 'true';
+        if (elSettingsEnableGca) elSettingsEnableGca.checked = gcaEnabled;
+        updateGcaTabVisibility(gcaEnabled);
         monaco = await loadMonaco();
         editor = monaco.editor.create(elEditorContainer, {
             value: '', language: 'python', theme: 'pll-dark',
@@ -1010,6 +1028,13 @@ if (elBtnSettingsClose) {
 if (elSettingsSessionSelect) {
     elSettingsSessionSelect.onchange = (e) => {
         selectSession(e.target.value);
+    };
+}
+if (elSettingsEnableGca) {
+    elSettingsEnableGca.onchange = (e) => {
+        const val = e.target.checked;
+        localStorage.setItem('pll-enable-gca', val);
+        updateGcaTabVisibility(val);
     };
 }
 if (elBtnNewSession) {
