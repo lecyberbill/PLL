@@ -51,6 +51,7 @@ class Conversation(Base):
     __tablename__ = "conversations"
     id = Column(Integer, primary_key=True, autoincrement=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    session_id = Column(Integer, ForeignKey("agent_sessions.id"), nullable=True)
     role = Column(String(50), nullable=False)
     content = Column(Text, default="")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

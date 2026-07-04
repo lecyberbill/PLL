@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from datetime import datetime, timezone
 from database import get_db
-from models import Project as ProjectModel, Artifact, Conversation
+from models import Project as ProjectModel, Artifact, Conversation, AgentSession
 from schemas import AgentSessionOut, ArtifactOut
 from services.agent_brain import AgentBrain
 
@@ -103,6 +103,58 @@ class GoResponse(BaseModel):
     agent_info: dict = {}
 
 
+async def _get_or_create_active_session(project_id: int, db: AsyncSession) -> AgentSession:
+    # Look for active session
+    res = await db.execute(
+        select(AgentSession).where(
+            AgentSession.project_id == project_id,
+            AgentSession.status != "archived"
+        ).order_by(AgentSession.created_at.desc()).limit(1)
+    )
+    session = res.scalar_one_or_none()
+    if not session:
+        session = AgentSession(project_id=project_id, status="active", agent_type="primary")
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+    return session
+
+
+async def _check_and_rollover_session(project_id: int, session: AgentSession, db: AsyncSession) -> AgentSession:
+    # Query all conversations in this session
+    res = await db.execute(
+        select(Conversation).where(
+            Conversation.project_id == project_id,
+            Conversation.session_id == session.id
+        ).order_by(Conversation.created_at.asc())
+    )
+    msgs = res.scalars().all()
+    total_len = sum(len(m.content) for m in msgs)
+    
+    # Rollover threshold: 20000 characters (approx. 5000 tokens)
+    if total_len > 20000:
+        # Archive current session
+        session.status = "archived"
+        session.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        
+        # Create new session
+        new_session = AgentSession(project_id=project_id, status="active", agent_type="primary")
+        db.add(new_session)
+        await db.commit()
+        await db.refresh(new_session)
+        
+        # Add system notice to the new session
+        notice = (
+            "System Notice: The conversation history exceeded the context window limit. "
+            "A new session has been automatically started to keep responses fast and clean."
+        )
+        db.add(Conversation(project_id=project_id, session_id=new_session.id, role="assistant", content=notice))
+        await db.commit()
+        return new_session
+    return session
+
+
 async def _run_orchestrator(message: str, project_name: str, file_names: list, backend: str) -> dict:
     from services.llm_proxy import chat_completion
     system_prompt = (
@@ -151,10 +203,16 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     if not project:
         raise HTTPException(404, "Project not found")
 
-    # Load conversation history (last 10 messages)
+    # Get active session and handle rollover if context exceeds limit
+    active_session = await _get_or_create_active_session(req.project_id, db)
+    active_session = await _check_and_rollover_session(req.project_id, active_session, db)
+
+    # Load conversation history for the active session (last 10 messages)
     conv_result = await db.execute(
-        select(Conversation).where(Conversation.project_id == req.project_id)
-            .order_by(Conversation.created_at.desc()).limit(10)
+        select(Conversation).where(
+            Conversation.project_id == req.project_id,
+            Conversation.session_id == active_session.id
+        ).order_by(Conversation.created_at.desc()).limit(10)
     )
     conv_msgs = list(reversed(conv_result.scalars().all()))
     conv_history = ""
@@ -167,14 +225,24 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     # Append history to the message
     augmented_msg = req.message + conv_history
 
-    # Save user message
-    db.add(Conversation(project_id=req.project_id, role="user", content=req.message))
+    # Save user message linked to active session
+    db.add(Conversation(
+        project_id=req.project_id,
+        session_id=active_session.id,
+        role="user",
+        content=req.message
+    ))
     await db.commit()
 
     async def _respond(**kw):
         answer = kw.get("answer") or kw.get("explanation") or kw.get("question", "")
         if answer:
-            db.add(Conversation(project_id=req.project_id, role="assistant", content=str(answer)))
+            db.add(Conversation(
+                project_id=req.project_id,
+                session_id=active_session.id,
+                role="assistant",
+                content=str(answer)
+            ))
             await db.commit()
         return GoResponse(**kw)
 
@@ -234,18 +302,29 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
     if not project:
         raise HTTPException(404, "Project not found")
 
+    # Get active session and handle rollover if context exceeds limit
+    active_session = await _get_or_create_active_session(req.project_id, db)
+    active_session = await _check_and_rollover_session(req.project_id, active_session, db)
+
     async def event_stream():
         queue = asyncio.Queue()
         yield f"data: {json.dumps({'type': 'init', 'project': project.name})}\n\n"
 
-        # Save user message
-        db.add(Conversation(project_id=req.project_id, role="user", content=req.message))
+        # Save user message linked to active session
+        db.add(Conversation(
+            project_id=req.project_id,
+            session_id=active_session.id,
+            role="user",
+            content=req.message
+        ))
         await db.commit()
 
-        # Load conversation history for context
+        # Load conversation history for active session
         conv_result = await db.execute(
-            select(Conversation).where(Conversation.project_id == req.project_id)
-                .order_by(Conversation.created_at.desc()).limit(10)
+            select(Conversation).where(
+                Conversation.project_id == req.project_id,
+                Conversation.session_id == active_session.id
+            ).order_by(Conversation.created_at.desc()).limit(10)
         )
         conv_msgs = list(reversed(conv_result.scalars().all()))
         conv_history = ""
@@ -332,12 +411,83 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
             if result.get("code"):
                 yield f"data: {json.dumps({'type': 'code', 'code': result['code'], 'file_path': result.get('file_path', '')})}\n\n"
 
-        # Save assistant reply
+        # Save assistant reply linked to active session
         if answer:
-            db.add(Conversation(project_id=req.project_id, role="assistant", content=str(answer)))
+            db.add(Conversation(
+                project_id=req.project_id,
+                session_id=active_session.id,
+                role="assistant",
+                content=str(answer)
+            ))
             await db.commit()
 
         yield f"data: {json.dumps({'type': 'done', 'answer': answer})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+class SessionResponse(BaseModel):
+    id: int
+    project_id: int
+    agent_type: str
+    status: str
+    generation: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ConversationResponse(BaseModel):
+    id: int
+    role: str
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/projects/{project_id}/sessions", response_model=list[SessionResponse])
+async def list_project_sessions(project_id: int, db: AsyncSession = Depends(get_db)):
+    """List all agent sessions for a project."""
+    res = await db.execute(
+        select(AgentSession).where(AgentSession.project_id == project_id)
+            .order_by(AgentSession.created_at.desc())
+    )
+    return res.scalars().all()
+
+
+@router.get("/sessions/{session_id}/conversations", response_model=list[ConversationResponse])
+async def list_session_conversations(session_id: int, db: AsyncSession = Depends(get_db)):
+    """List all conversations within a specific session."""
+    res = await db.execute(
+        select(Conversation).where(Conversation.session_id == session_id)
+            .order_by(Conversation.created_at.asc())
+    )
+    return res.scalars().all()
+
+
+@router.post("/projects/{project_id}/sessions/new", response_model=SessionResponse)
+async def create_new_project_session(project_id: int, db: AsyncSession = Depends(get_db)):
+    """Manually start a new clean session (archives the previous one)."""
+    # Archive current active sessions
+    res = await db.execute(
+        select(AgentSession).where(
+            AgentSession.project_id == project_id,
+            AgentSession.status != "archived"
+        )
+    )
+    active_sessions = res.scalars().all()
+    for session in active_sessions:
+        session.status = "archived"
+        session.updated_at = datetime.now(timezone.utc)
+    
+    # Create new session
+    new_session = AgentSession(project_id=project_id, status="active", agent_type="primary")
+    db.add(new_session)
+    await db.commit()
+    await db.refresh(new_session)
+    return new_session
 
