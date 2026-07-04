@@ -192,7 +192,11 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
         from pathlib import Path
         pdir = Path(project.disk_path).resolve()
         if pdir.exists():
-            disk_files = [f for f in pdir.rglob("*") if f.is_file()]
+            skip_dirs = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache", ".mypy_cache", "target"}
+            disk_files = [
+                f for f in pdir.rglob("*")
+                if f.is_file() and not any(p in f.parts for p in skip_dirs)
+            ]
             has_files = len(disk_files) > 0
             file_names = [str(f.relative_to(pdir)) for f in disk_files[:50]]
     brain = AgentBrain(db)
@@ -370,7 +374,11 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
             from pathlib import Path
             pdir = Path(project.disk_path).resolve()
             if pdir.exists():
-                disk_files = [f for f in pdir.rglob("*") if f.is_file()]
+                skip_dirs = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache", ".mypy_cache", "target"}
+                disk_files = [
+                    f for f in pdir.rglob("*")
+                    if f.is_file() and not any(p in f.parts for p in skip_dirs)
+                ]
                 has_files = len(disk_files) > 0
                 file_names = [str(f.relative_to(pdir)) for f in disk_files[:50]]
 
