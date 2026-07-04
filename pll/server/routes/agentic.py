@@ -1,3 +1,6 @@
+"""
+[WFGY] Zone: SAFE | λ: 0.5 | Fallbacks: None | Action: Implement unified Chef d'Orchestre (Orchestrator Agent) flow
+"""
 import re
 import json
 import asyncio
@@ -100,48 +103,50 @@ class GoResponse(BaseModel):
     agent_info: dict = {}
 
 
-async def _detect_mode(message: str, has_files: bool = False) -> str:
+async def _run_orchestrator(message: str, project_name: str, file_names: list, backend: str) -> dict:
     from services.llm_proxy import chat_completion
     system_prompt = (
-        "You are a multilingual AI router. Analyze the user message step-by-step to understand the intent.\n\n"
-        "Categories:\n"
-        "- 'resume': Conversational chatter, greetings, status requests, feedback/small talk, questions about how to run/start/use/play the application (e.g., 'how do I start?', 'comment je lance?', 'wie starte ich?'), explanations of code, or requests to wait/stop (in any language).\n"
-        "- 'simple': Explicit requests to create or edit a single file (e.g., 'create app.js', 'crée index.html', 'erstelle main.js').\n"
-        "- 'react': Explicit requests requiring multi-step tool execution, running shell commands, project verification/testing, or editing multiple files (e.g., 'run the tests', 'install npm', 'lance les tests').\n\n"
-        "Think step-by-step first in English, then output your final category within the tags: <category>category_name</category>\n\n"
+        "You are the Orchestrator (Chef d'Orchestre) of a software development agent.\n"
+        "Your role is to understand the user's intent and decide whether to reply directly or delegate the task to your ReAct executor.\n\n"
+        "When to REPLY DIRECTLY:\n"
+        "- Greetings, conversation, questions asking for explanations, status checks, questions about how to run/start/use/play the project, and general discussions.\n"
+        "- In this case, simply output the text response.\n\n"
+        "When to DELEGATE:\n"
+        "- Requests to create, edit, fix, delete files, write code, run shell commands, or test the project.\n"
+        "- In this case, you MUST wrap the delegated technical instructions inside the following tag:\n"
+        "  <delegate>Technical instructions for the ReAct executor</delegate>\n"
+        "- Keep your thoughts outside the tag, but make sure the tag contains the precise instruction to execute.\n\n"
         "Multilingual Examples:\n"
-        "- 'hello there' -> Thought: Greeting. Category: resume.\n"
-        "- 'comment je lance le jeu ?' -> Thought: Question asking how to launch the game, no file creation or edit requested. Category: resume.\n"
-        "- 'how do I run this code?' -> Thought: Question asking how to run the project. Category: resume.\n"
-        "- 'wie kann ich das Spiel starten?' -> Thought: German question about launching the game. Category: resume.\n"
-        "- 'crée un serveur express' -> Thought: Explicitly requests creating a single file. Category: simple.\n"
-        "- 'create index.html' -> Thought: Explicit request to create a single file. Category: simple.\n"
-        "- 'run the test suite' -> Thought: Requests executing shell commands/testing. Category: react."
+        "- 'comment je lance le jeu ?' -> Thought: Question asking how to launch the game, no code change needed. Reply directly: 'Pour lancer le jeu, ouvrez index.html...'\n"
+        "- 'wie starte ich das?' -> Thought: German question about launching the game. Reply directly: 'Um das Spiel zu starten...'\n"
+        "- 'ajoute une fonction de log' -> Thought: Requests file modification. Delegate: <delegate>Add a logging function to the main JS file</delegate>\n"
+        "- 'run the tests' -> Thought: Requests project verification. Delegate: <delegate>Run tests on the project</delegate>"
     )
+    
+    files_str = ", ".join(file_names) if file_names else "(empty)"
+    prompt = (
+        f"Project Name: {project_name}\n"
+        f"Project Files: {files_str}\n"
+        f"User Message: {message}"
+    )
+    
     result = await chat_completion(
-        messages=[{"role": "user", "content": message[:500]}],
+        messages=[{"role": "user", "content": prompt}],
         system_prompt=system_prompt,
-        temperature=0,
-        backend="",
+        temperature=0.1,
+        backend=backend,
     )
     resp = result.get("response", "")
     import re
-    match = re.search(r'<category>(\w+)</category>', resp.lower())
+    match = re.search(r'<delegate>(.*?)</delegate>', resp, re.DOTALL)
     if match:
-        mode = match.group(1).strip()
-        if mode in ("resume", "simple", "react"):
-            return mode
-    # Fallback parsing
-    for mode in ("resume", "simple", "react"):
-        if mode in resp.lower()[-20:]:
-            return mode
-    return "react"
+        return {"delegate": True, "instruction": match.group(1).strip(), "raw_response": resp}
+    return {"delegate": False, "answer": resp}
 
 
 @router.post("/go", response_model=GoResponse)
 async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
-    """Smart single entry point — clarifies if needed, then generates."""
-
+    """Smart single entry point — orchestrates, then generates or replies."""
     project = await db.get(ProjectModel, req.project_id)
     if not project:
         raise HTTPException(404, "Project not found")
@@ -162,17 +167,9 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     # Append history to the message
     augmented_msg = req.message + conv_history
 
-    # Save user message + append conversation history
+    # Save user message
     db.add(Conversation(project_id=req.project_id, role="user", content=req.message))
     await db.commit()
-    conv_result = await db.execute(
-        select(Conversation).where(Conversation.project_id == req.project_id)
-            .order_by(Conversation.created_at.desc()).limit(10)
-    )
-    history = "\n".join(f"{'User' if c.role=='user' else 'Asst'}: {c.content}"
-                        for c in reversed(conv_result.scalars().all()))
-    if history:
-        augmented_msg += "\n\n## Recent conversation:\n" + history
 
     async def _respond(**kw):
         answer = kw.get("answer") or kw.get("explanation") or kw.get("question", "")
@@ -200,124 +197,19 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
             ]
             has_files = len(disk_files) > 0
             file_names = [str(f.relative_to(pdir)) for f in disk_files[:50]]
-    brain = AgentBrain(db)
 
-    # Check for pending clarification
-    agent_session = await brain._get_or_create_primary(req.project_id, augmented_msg)
-    pending = None
-    if agent_session.current_state:
-        pending = AgentBrain._parse_pending(agent_session.current_state)
+    # Call Orchestrator
+    orchestration = await _run_orchestrator(augmented_msg, project.name, file_names, req.backend)
 
-    mode = await _detect_mode(req.message, has_files)
-
-    # Resume mode (clear pending, fresh exploration)
-    if mode == "resume":
-        if pending:
-            agent_session.current_state = ""
-            await db.commit()
-            pending = None
-        result = await brain.process_request(req.project_id, augmented_msg, backend=req.backend)
-        if result.get("explanation"):
-            return await _respond(
-                answer=result["explanation"],
-                explanation=result["explanation"],
-                mode="resume",
-                agent_info=result.get("agent_info", {}),
-            )
-        return await _respond(answer="Projet analysé.", mode="resume")
-
-    if pending:
-        # User is responding to a clarification question
-        pending["history"].append({"a": augmented_msg})
-        ctx_lines = [f"Demande originale: {pending['original']}"]
-        for h in pending["history"]:
-            if "q" in h and "a" in h:
-                ctx_lines.append(f"Q: {h['q']}  A: {h['a']}")
-            elif "q" in h:
-                ctx_lines.append(f"Q: {h['q']}")
-        ctx_lines.append(f"Reponse utilisateur: {augmented_msg}")
-        full_message = "\n".join(ctx_lines)
-
-        # Check if we need further clarification
-        context_str = f"Project: {project.name}\nFiles: {', '.join(file_names) if file_names else '(empty)'}"
-        sub = await brain.clarify_if_needed(full_message, context_str, req.backend)
-        if sub.get("needs"):
-            pending["history"].append({"q": sub["question"]})
-            agent_session.current_state = AgentBrain._pending_key(pending)
-            agent_session.updated_at = datetime.now(timezone.utc)
-            await db.commit()
-            return await _respond(question=sub["question"], mode="clarify")
-
-        # Clear enough — proceed with generation
-        agent_session.current_state = ""
-        await db.commit()
-        augmented_msg = full_message
-    else:
-        context_str = f"Project: {project.name}\nFiles: {', '.join(file_names) if file_names else '(empty)'}"
-
-    mode = await _detect_mode(req.message, has_files)
-
-    if mode == "resume":
-        result = await brain.process_request(req.project_id, augmented_msg, backend=req.backend)
-        if result.get("explanation"):
-            return await _respond(
-                answer=result["explanation"],
-                explanation=result["explanation"],
-                mode="resume",
-                agent_info=result.get("agent_info", {}),
-            )
-
-    # Clarification (only for non-resume modes — resume is inherently open-ended)
-    if not pending and mode != "resume":
-        sub = await brain.clarify_if_needed(augmented_msg, context_str, req.backend)
-        if sub.get("needs"):
-            pending_data = {"original": augmented_msg, "history": [{"q": sub["question"]}]}
-            agent_session.current_state = AgentBrain._pending_key(pending_data)
-            agent_session.updated_at = datetime.now(timezone.utc)
-            await db.commit()
-            return await _respond(question=sub["question"], mode="clarify")
-
-    if mode == "simple":
-        target = ""
-        if has_files:
-            for fname in file_names:
-                if fname.replace(".", " ").replace("_", " ") in augmented_msg.lower() or fname in augmented_msg:
-                    target = fname
-                    break
-        result = await brain.process_request(
-            req.project_id, augmented_msg, backend=req.backend, target_file=target
-        )
-        if result.get("explanation"):
-            return await _respond(
-                answer=result["explanation"], explanation=result["explanation"], mode="resume"
-            )
+    if not orchestration["delegate"]:
+        # Direct response
         return await _respond(
-            answer=f"{'Edited' if result.get('edit_mode') else 'Created'} {result['file_path']}",
-            code=result["code"],
-            file_path=result["file_path"],
-            files_modified=result.get("files_modified", []),
-            mode="edit" if result.get("edit_mode") else "create",
-            agent_info=result.get("agent_info", {}),
+            answer=orchestration["answer"],
+            explanation=orchestration["answer"],
+            mode="resume",
         )
 
-    if mode == "react":
-        from services.agent_react import AgentReAct
-        context_str = (
-            f"## Project: {project.name}\n"
-            f"Files: {', '.join(file_names) if file_names else '(empty)'}\n"
-            f"Description: {project.description or ''}"
-        )
-        agent = AgentReAct(req.project_id, req.backend, max_steps=50)
-        result = await agent.run(augmented_msg, context_str)
-        return await _respond(
-            answer=result.get("answer", ""),
-            code=result.get("code", ""),
-            file_path=result.get("file_path", ""),
-            steps=result.get("steps", []),
-            mode="react",
-        )
-
-    # Fallback: single ReAct agent with high step limit
+    # Delegated task
     from services.agent_react import AgentReAct
     context_str = (
         f"## Project: {project.name}\n"
@@ -325,7 +217,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
         f"Description: {project.description or ''}"
     )
     agent = AgentReAct(req.project_id, req.backend, max_steps=50)
-    result = await agent.run(augmented_msg, context_str)
+    result = await agent.run(orchestration["instruction"], context_str)
     return await _respond(
         answer=result.get("answer", ""),
         code=result.get("code", ""),
@@ -383,10 +275,8 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
                 has_files = len(disk_files) > 0
                 file_names = [str(f.relative_to(pdir)) for f in disk_files[:50]]
 
-        brain = AgentBrain(db)
-        mode = await _detect_mode(req.message, has_files)
-
-        yield f"data: {json.dumps({'type': 'mode', 'mode': mode})}\n\n"
+        # Call Orchestrator
+        orchestration = await _run_orchestrator(augmented_msg, project.name, file_names, req.backend)
 
         async def _emit(ev_type, **kw):
             await queue.put(({"type": ev_type, **kw}, False))
@@ -399,15 +289,15 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
                     break
                 yield f"data: {json.dumps(ev)}\n\n"
 
-        if mode in ("simple", "resume"):
-            result = await brain.process_request(req.project_id, augmented_msg, backend=req.backend)
-            explanation = result.get("explanation", "")
-            if explanation:
-                yield f"data: {json.dumps({'type': 'explanation', 'text': explanation})}\n\n"
-            if result.get("code"):
-                yield f"data: {json.dumps({'type': 'code', 'code': result['code'], 'file_path': result.get('file_path', '')})}\n\n"
-            answer = explanation or f"{'Edited' if result.get('edit_mode') else 'Created'} {result.get('file_path', '')}"
-        elif mode == "react":
+        if not orchestration["delegate"]:
+            # Direct response
+            explanation = orchestration["answer"]
+            yield f"data: {json.dumps({'type': 'mode', 'mode': 'resume'})}\n\n"
+            yield f"data: {json.dumps({'type': 'explanation', 'text': explanation})}\n\n"
+            answer = explanation
+        else:
+            # technical execution
+            yield f"data: {json.dumps({'type': 'mode', 'mode': 'react'})}\n\n"
             context_str = (
                 f"## Project: {project.name}\n"
                 f"Files: {', '.join(file_names) if file_names else '(empty)'}\n"
@@ -425,7 +315,7 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
             async def _run_agent():
                 try:
                     result = await asyncio.wait_for(
-                        agent.run(augmented_msg, context_str, step_callback=step_cb),
+                        agent.run(orchestration["instruction"], context_str, step_callback=step_cb),
                         timeout=300
                     )
                     return result
@@ -441,8 +331,6 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
             answer = result.get("answer", "")
             if result.get("code"):
                 yield f"data: {json.dumps({'type': 'code', 'code': result['code'], 'file_path': result.get('file_path', '')})}\n\n"
-        else:
-            answer = "Unknown mode — try rephrasing your request."
 
         # Save assistant reply
         if answer:
