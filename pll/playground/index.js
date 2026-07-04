@@ -54,6 +54,7 @@ const elBtnNewSession = document.getElementById('btn-new-session');
 const elSettingsEnableGca = document.getElementById('settings-enable-gca');
 const elTabBtnGca = document.getElementById('tab-btn-gca');
 const elBtnRunCode = document.getElementById('btn-run-code');
+const elBtnSaveFile = document.getElementById('btn-save-file');
 const elGcaStatus = document.getElementById('gca-status');
 const elGcaVault = document.getElementById('gca-vault');
 const elPackagesList = document.getElementById('packages-list');
@@ -697,6 +698,9 @@ async function main() {
         editor.onDidChangeModelContent(() => {
             if (activeFile) set_virtual_file(activeFile, editor.getValue());
         });
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, (e) => {
+            saveProjectToServer();
+        });
         clearDefaults();
         await loadProjects();
         await refreshPackages();
@@ -874,6 +878,10 @@ async function runPllCode() {
 
 if (elBtnRunCode) {
     elBtnRunCode.onclick = runPllCode;
+}
+
+if (elBtnSaveFile) {
+    elBtnSaveFile.onclick = saveProjectToServer;
 }
 
 // Event listeners
