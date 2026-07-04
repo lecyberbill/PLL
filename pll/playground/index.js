@@ -846,6 +846,7 @@ if (elTerminalInput) {
                 termHistIdx = termHistory.length;
                 elTerminalInput.value = '';
             }
+        }
     });
 }
 
