@@ -184,3 +184,18 @@ Résultat
 ```
 
 Le compilateur PLL peut se compiler lui-même : le langage est auto-hébergé.
+
+## 7. Paquets d'Assistance pour Agents (Disponibles dans le Registre)
+
+Deux paquets d'assistance PLL sont pré-enregistrés dans le registre de paquets (`/api/packages`) pour faciliter l'implémentation de la logique agentic :
+
+### 7.1 `agent_prompt`
+Fournit un moteur de formatage et de templating d'invites.
+- **`str_replace(s: String, pattern: String, replacement: String) -> String`** : Remplace toutes les occurrences de `pattern` par `replacement` dans la chaîne `s`.
+- **`prompt_format(template: String, keys: List, values: List) -> String`** : Remplace les balises de type `{key}` par les valeurs correspondantes.
+
+### 7.2 `agent_fsm`
+Fournit un moteur de machine à états finis déterministe pour gérer les transitions de l'agent.
+- **`fsm_new(initial_state: String) -> FSM`** : Crée une FSM avec un état de départ.
+- **`fsm_add_transition(f: FSM, from: String, trigger: String, to: String) -> FSM`** : Enregistre une transition autorisée.
+- **`fsm_trigger(f: FSM, trigger: String) -> FSM`** : Déclenche le changement d'état et consigne la transition dans l'historique.
