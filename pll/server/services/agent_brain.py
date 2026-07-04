@@ -138,13 +138,14 @@ class AgentBrain:
                 confirm = await chat_completion(
                     messages=[{"role": "user", "content": (
                         f"Message: {user_message[:200]}\n\n"
-                        f"EXPLORE = user wants ideas, explanations, greetings, conversation, small talk, project review, status updates, or requests to wait/stop.\n"
+                        f"EXPLORE = user wants ideas, explanations, greetings, conversation, small talk, project review, status updates, requests to wait/stop, or questions about how to run/start/use/play the project (in any language).\n"
                         f"GENERATE = explicitly requests creating, editing, fixing, or modifying code files.\n\n"
                         f"Think step-by-step about the intent, then output the final choice as either <intent>EXPLORE</intent> or <intent>GENERATE</intent>.\n\n"
-                        f"Examples:\n"
+                        f"Multilingual Examples:\n"
                         f'  - "hello" -> Thought: Greeting. Choice: <intent>EXPLORE</intent>\n'
-                        f'  - "attend je debug et on se reparle" -> Thought: Casual notice telling me to wait. Choice: <intent>EXPLORE</intent>\n'
-                        f'  - "de ton côté pas eu de difficulté ?" -> Thought: Small talk / question. Choice: <intent>EXPLORE</intent>\n'
+                        f'  - "comment je lance le jeu ?" -> Thought: Multilingual question about launching the game. Choice: <intent>EXPLORE</intent>\n'
+                        f'  - "how do I run this?" -> Thought: Multilingual question about running the project. Choice: <intent>EXPLORE</intent>\n'
+                        f'  - "wie starte ich das?" -> Thought: German question about starting the game. Choice: <intent>EXPLORE</intent>\n'
                         f'  - "ajoute une route à app.py" -> Thought: Edit code file. Choice: <intent>GENERATE</intent>'
                     )}],
                     system_prompt="Classify the user intent. Output either EXPLORE or GENERATE within the <intent> tag.",

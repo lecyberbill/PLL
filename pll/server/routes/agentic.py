@@ -103,19 +103,20 @@ class GoResponse(BaseModel):
 async def _detect_mode(message: str, has_files: bool = False) -> str:
     from services.llm_proxy import chat_completion
     system_prompt = (
-        "You are an AI router. Analyze the user message step-by-step to understand the intent.\n\n"
+        "You are a multilingual AI router. Analyze the user message step-by-step to understand the intent.\n\n"
         "Categories:\n"
-        "- 'resume': conversational chatter, greetings, questions, status requests, feedback/small talk, or messages saying to wait/stop (e.g., 'attend', 'ok merci', 'super', 'de ton côté ?').\n"
-        "- 'simple': explicitly requests creating or editing a single file (e.g., 'crée index.html', 'ajoute une route à app.py').\n"
-        "- 'react': requests executing multi-step tasks, shell commands, verification, or multi-file edits (e.g., 'teste le projet', 'installe npm', 'cherche le bug').\n\n"
-        "Think step-by-step first, then output the final decision in the following tag: <category>decision</category>\n\n"
-        "Examples:\n"
-        "- 'hello' -> Thought: Greeting. Category: resume.\n"
-        "- 'attend je debug et on se reparle' -> Thought: Conversational notice to wait, no action requested. Category: resume.\n"
-        "- 'de ton côté pas eu de difficulté ?' -> Thought: Casual question/small talk. Category: resume.\n"
-        "- 'ok super merci' -> Thought: Conversational feedback. Category: resume.\n"
-        "- 'crée un serveur express' -> Thought: Single file creation requested. Category: simple.\n"
-        "- 'lance les tests et dis moi' -> Thought: Shell execution / verification task. Category: react."
+        "- 'resume': Conversational chatter, greetings, status requests, feedback/small talk, questions about how to run/start/use/play the application (e.g., 'how do I start?', 'comment je lance?', 'wie starte ich?'), explanations of code, or requests to wait/stop (in any language).\n"
+        "- 'simple': Explicit requests to create or edit a single file (e.g., 'create app.js', 'crée index.html', 'erstelle main.js').\n"
+        "- 'react': Explicit requests requiring multi-step tool execution, running shell commands, project verification/testing, or editing multiple files (e.g., 'run the tests', 'install npm', 'lance les tests').\n\n"
+        "Think step-by-step first in English, then output your final category within the tags: <category>category_name</category>\n\n"
+        "Multilingual Examples:\n"
+        "- 'hello there' -> Thought: Greeting. Category: resume.\n"
+        "- 'comment je lance le jeu ?' -> Thought: Question asking how to launch the game, no file creation or edit requested. Category: resume.\n"
+        "- 'how do I run this code?' -> Thought: Question asking how to run the project. Category: resume.\n"
+        "- 'wie kann ich das Spiel starten?' -> Thought: German question about launching the game. Category: resume.\n"
+        "- 'crée un serveur express' -> Thought: Explicitly requests creating a single file. Category: simple.\n"
+        "- 'create index.html' -> Thought: Explicit request to create a single file. Category: simple.\n"
+        "- 'run the test suite' -> Thought: Requests executing shell commands/testing. Category: react."
     )
     result = await chat_completion(
         messages=[{"role": "user", "content": message[:500]}],
