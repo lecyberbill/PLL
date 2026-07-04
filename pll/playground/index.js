@@ -53,6 +53,7 @@ const elSettingsSessionSelect = document.getElementById('settings-session-select
 const elBtnNewSession = document.getElementById('btn-new-session');
 const elSettingsEnableGca = document.getElementById('settings-enable-gca');
 const elTabBtnGca = document.getElementById('tab-btn-gca');
+const elBtnRunCode = document.getElementById('btn-run-code');
 const elGcaStatus = document.getElementById('gca-status');
 const elGcaVault = document.getElementById('gca-vault');
 const elPackagesList = document.getElementById('packages-list');
@@ -841,8 +842,38 @@ if (elTerminalInput) {
                 termHistIdx = termHistory.length;
                 elTerminalInput.value = '';
             }
-        }
     });
+}
+
+async function runPllCode() {
+    const code = editor.getValue();
+    if (!code) {
+        logToTerminal("Erreur : Aucun code à exécuter.", "stderr");
+        return;
+    }
+    switchTab('tab-terminal');
+    logToTerminal(`❯ pll run ${activeFile || 'main.pll'}`, "cmd");
+    try {
+        const resp = await fetch('/api/pll/exec', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code })
+        });
+        const result = await resp.json();
+        if (result.output) {
+            logToTerminal(result.output, "stdout");
+        }
+        if (result.error) {
+            logToTerminal(result.error, "stderr");
+        }
+        logToTerminal(`Process finished: ${result.ok ? 'SUCCESS' : 'FAILED'}`, result.ok ? 'exit-ok' : 'exit-err');
+    } catch (e) {
+        logToTerminal(`Erreur lors de l'exécution: ${e.message}`, "stderr");
+    }
+}
+
+if (elBtnRunCode) {
+    elBtnRunCode.onclick = runPllCode;
 }
 
 // Event listeners

@@ -41,8 +41,13 @@
             <section class="pane editor-pane">
                 <div class="pane-header">
                     <div class="editor-tabs-bar" id="editor-tabs-bar"></div>
-                    <div class="editor-status" id="typecheck-status">
-                        <span class="status-indicator success"></span> Prêt
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div class="editor-status" id="typecheck-status">
+                            <span class="status-indicator success"></span> Prêt
+                        </div>
+                        <button id="btn-run-code" class="btn btn-sm btn-primary" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px;" title="Exécuter le fichier PLL actuel">
+                            ▶ Exécuter
+                        </button>
                     </div>
                 </div>
                 <div class="editor-container">
