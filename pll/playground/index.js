@@ -369,6 +369,23 @@ async function saveProjectToServer() {
     }
     await loadProjects();
     logToTerminal(`Projet sauvegardé (ID: ${currentProjectId}).`, 'sys-msg');
+    
+    const buttons = [elBtnSaveFile, elBtnSaveProject];
+    for (const btn of buttons) {
+        if (btn) {
+            const originalText = btn.innerHTML;
+            btn.innerHTML = btn === elBtnSaveProject ? "✅ Sauvé !" : "✅ Enregistré !";
+            const originalBg = btn.style.backgroundColor;
+            const originalBc = btn.style.borderColor;
+            btn.style.backgroundColor = "#2e7d32";
+            btn.style.borderColor = "#2e7d32";
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.style.backgroundColor = originalBg;
+                btn.style.borderColor = originalBc;
+            }, 2000);
+        }
+    }
 }
 
 async function loadProjectFromServer(projectId) {
