@@ -22,10 +22,22 @@
                     <button id="btn-save-project" class="btn btn-sm btn-secondary" title="Sauvegarder">💾</button>
                     <button id="btn-new-project" class="btn btn-sm btn-secondary" title="Nouveau projet">+</button>
                     <button id="btn-delete-project" class="btn btn-sm btn-danger" style="display:none">🗑</button>
+                    <button id="btn-settings" class="btn btn-sm btn-secondary" title="Paramètres">⚙️ Paramètres</button>
                 </div>
             </div>
         </header>
         <main class="workspace">
+            <aside class="pane sidebar-pane" id="sidebar-files">
+                <div class="pane-header">
+                    <div class="sidebar-title">📂 Projet & Fichiers</div>
+                    <button id="btn-add-file" class="btn btn-sm btn-secondary" title="Nouveau fichier">+</button>
+                </div>
+                <div class="vfs-manager">
+                    <div class="vfs-list" id="vfs-files-list"></div>
+                </div>
+            </aside>
+            <div class="resize-handle" id="resize-handle-left"></div>
+            
             <section class="pane editor-pane">
                 <div class="pane-header">
                     <div class="editor-tabs-bar" id="editor-tabs-bar"></div>
@@ -38,19 +50,37 @@
                 </div>
                 <div class="editor-lang-badge" id="editor-lang-badge">python</div>
             </section>
+            
             <div class="resize-handle" id="resize-handle"></div>
+            
             <section class="pane results-pane">
                 <div class="pane-header">
                     <div class="tabs-list">
-                        <button class="tab-btn active" data-tab="tab-terminal">Console</button>
-                        <button class="tab-btn" data-tab="tab-vfs">Fichiers</button>
+                        <button class="tab-btn active" data-tab="tab-agentic">Agent 🤖</button>
+                        <button class="tab-btn" data-tab="tab-terminal">Console</button>
                         <button class="tab-btn" data-tab="tab-gca">GCA</button>
-                        <button class="tab-btn" data-tab="tab-agentic">Agent 🤖</button>
                         <button class="tab-btn" data-tab="tab-packages">Paquets</button>
                         <button class="tab-btn" data-tab="tab-conversations">Historique</button>
                     </div>
                 </div>
-                <div class="tab-content active" id="tab-terminal">
+                <div class="tab-content active" id="tab-agentic">
+                    <div class="agentic-panel">
+                        <div class="agentic-header">
+                            <h3>Agent de Développement 🤖</h3>
+                            <div class="agentic-controls">
+                                <button id="btn-agentic-clear" class="btn btn-sm btn-secondary">Effacer</button>
+                            </div>
+                        </div>
+                        <div class="agentic-conversation" id="agentic-conversation">
+                            <div class="sys-msg">Posez une question à l'agent ou demandez-lui de coder une fonctionnalité.</div>
+                        </div>
+                        <div class="agentic-input-bar">
+                            <textarea id="agentic-input" rows="4" placeholder="Ex: Ajoute un bouton pause au jeu de snake..."></textarea>
+                            <button id="btn-agentic-send" class="btn btn-primary">Envoyer</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="tab-content" id="tab-terminal">
                     <div class="terminal-panel">
                         <div class="terminal-output" id="terminal-log">
                             <div class="sys-msg">Console PLL prête. Tapez une commande ci-dessous.</div>
@@ -59,15 +89,6 @@
                             <span class="terminal-prompt">❯</span>
                             <input type="text" id="terminal-input" placeholder="Commande shell..." spellcheck="false" autocomplete="off">
                         </div>
-                    </div>
-                </div>
-                <div class="tab-content" id="tab-vfs">
-                    <div class="vfs-manager">
-                        <div class="vfs-header">
-                            <h3>Fichiers</h3>
-                            <button id="btn-add-file" class="btn btn-sm btn-secondary">+</button>
-                        </div>
-                        <div class="vfs-list" id="vfs-files-list"></div>
                     </div>
                 </div>
                 <div class="tab-content" id="tab-gca">
@@ -82,28 +103,6 @@
                         </div>
                         <div id="gca-status"></div>
                         <div id="gca-vault"></div>
-                    </div>
-                </div>
-                <div class="tab-content" id="tab-agentic">
-                    <div class="agentic-panel">
-                        <div class="agentic-header">
-                            <h3>Agent 🤖</h3>
-                            <div class="agentic-controls">
-                                <select id="agentic-backend" class="project-select">
-                                    <option value="auto">Auto</option>
-                                    <option value="deepseek">DeepSeek</option>
-                                    <option value="lmstudio">LM Studio</option>
-                                </select>
-                                <button id="btn-agentic-clear" class="btn btn-sm btn-secondary">Effacer</button>
-                            </div>
-                        </div>
-                        <div class="agentic-conversation" id="agentic-conversation">
-                            <div class="sys-msg">Posez une question à l'agent.</div>
-                        </div>
-                        <div class="agentic-input-bar">
-                            <textarea id="agentic-input" rows="4" placeholder="Ex: Crée une fonction fibonacci..."></textarea>
-                            <button id="btn-agentic-send" class="btn btn-primary">Envoyer</button>
-                        </div>
                     </div>
                 </div>
                 <div class="tab-content" id="tab-packages">
@@ -141,6 +140,34 @@
             <div class="modal-actions">
                 <button id="modal-cancel" class="btn btn-secondary">Annuler</button>
                 <button id="modal-save" class="btn btn-primary">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+    <div class="modal" id="settings-modal">
+        <div class="modal-content">
+            <h2>Paramètres de l'Agent & Sessions</h2>
+            <div class="form-group">
+                <label>Modèle de Langue / Backend</label>
+                <select id="settings-backend" class="project-select" style="width: 100%; display: block; margin-top: 4px;">
+                    <option value="auto">Auto (Conseillé)</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="lmstudio">LM Studio (Local)</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-top: 18px;">
+                <label>Session active</label>
+                <div style="display: flex; gap: 8px; margin-top: 4px;">
+                    <select id="settings-session-select" class="project-select" style="flex: 1; min-width: 0;">
+                        <option value="">-- Aucune session --</option>
+                    </select>
+                    <button id="btn-new-session" class="btn btn-primary">Nouvelle</button>
+                </div>
+                <small style="color: var(--text-muted); margin-top: 6px; display: block; line-height: 1.4;">
+                    Les sessions fragmentent votre historique de conversation. Si le contexte devient trop lourd ou commence à faire des erreurs, créez une nouvelle session !
+                </small>
+            </div>
+            <div class="modal-actions" style="margin-top: 24px;">
+                <button id="btn-settings-close" class="btn btn-secondary">Fermer</button>
             </div>
         </div>
     </div>

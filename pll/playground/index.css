@@ -46,9 +46,13 @@ body { font-family: var(--font-sans); background: var(--bg-primary); color: var(
 .workspace { display: flex; flex: 1; overflow: hidden; }
 .resize-handle { width: 4px; cursor: col-resize; background: transparent; flex-shrink: 0; transition: background 0.15s; z-index: 10; }
 .resize-handle:hover, .resize-handle.dragging { background: var(--accent); }
+#resize-handle-left { width: 4px; cursor: col-resize; background: transparent; flex-shrink: 0; transition: background 0.15s; z-index: 10; }
+#resize-handle-left:hover, #resize-handle-left.dragging { background: var(--accent); }
 .pane { display: flex; flex-direction: column; }
-.editor-pane { flex: 1; min-width: 0; position: relative; }
-.results-pane { width: 500px; min-width: 350px; border-left: 1px solid var(--border-color); }
+.sidebar-pane { width: 240px; min-width: 180px; max-width: 400px; border-right: 1px solid var(--border-color); background: rgba(26, 26, 46, 0.4); backdrop-filter: blur(10px); }
+.sidebar-title { font-size: 13px; font-weight: 600; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.5px; }
+.editor-pane { flex: 1; min-width: 250px; position: relative; }
+.results-pane { width: 520px; min-width: 350px; border-left: 1px solid var(--border-color); background: rgba(26, 26, 46, 0.4); backdrop-filter: blur(10px); }
 
 .pane-header { display: flex; align-items: center; padding: 4px 8px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); flex-shrink: 0; gap: 8px; }
 .tabs-list { display: flex; gap: 0; }
@@ -90,21 +94,20 @@ body { font-family: var(--font-sans); background: var(--bg-primary); color: var(
 .sys-msg { color: var(--text-muted); font-style: italic; }
 .error-msg { color: var(--error); }
 
-.vfs-manager { display: flex; flex-direction: column; gap: 4px; }
-.vfs-header { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; }
-.vfs-header h3 { font-size: 13px; }
-.vfs-list { display: flex; flex-direction: column; gap: 0; }
-.vfs-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-radius: var(--radius-sm); cursor: default; }
-.vfs-item:hover { background: rgba(255,255,255,0.05); }
-.vfs-item-name { font-family: var(--font-mono); font-size: 13px; cursor: pointer; flex: 1; overflow: hidden; text-overflow: ellipsis; }
-.vfs-item-name:hover { color: var(--accent); }
+.vfs-manager { display: flex; flex-direction: column; gap: 4px; padding: 8px; }
+.vfs-list { display: flex; flex-direction: column; gap: 2px; }
+.vfs-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm); cursor: default; transition: background 0.15s; position: relative; }
+.vfs-item:hover { background: rgba(255, 255, 255, 0.04); }
+.vfs-item-name { font-family: var(--font-mono); font-size: 13px; cursor: pointer; flex: 1; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.vfs-item-name:hover { color: var(--accent-hover); }
 .vfs-item-name.active { color: var(--accent); font-weight: 600; }
-.vfs-git-badge { font-size: 10px; font-weight: 700; margin-right: 4px; }
-.vfs-git-badge.modified { color: var(--warning); }
-.vfs-git-badge.staged { color: var(--success); }
-.vfs-git-badge.untracked { color: var(--text-muted); }
-.vfs-git-badge.deleted { color: var(--error); }
-.vfs-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
+.vfs-toggle { transition: transform 0.15s; display: inline-block; }
+.vfs-git-badge { font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); margin-right: 4px; }
+.vfs-git-badge.modified { color: var(--warning); background: rgba(245, 158, 11, 0.15); }
+.vfs-git-badge.staged { color: var(--success); background: rgba(34, 197, 94, 0.15); }
+.vfs-git-badge.untracked { color: var(--text-muted); background: rgba(255, 255, 255, 0.05); }
+.vfs-git-badge.deleted { color: var(--error); background: rgba(239, 68, 68, 0.15); }
+.vfs-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; z-index: 5; }
 .vfs-item:hover .vfs-actions { opacity: 1; }
 
 .agentic-panel { display: flex; flex-direction: column; height: 100%; }

@@ -40,11 +40,17 @@ const elEditorContainer = document.getElementById('monaco-editor');
 const elEditorTabsBar = document.getElementById('editor-tabs-bar');
 const elLangBadge = document.getElementById('editor-lang-badge');
 const elResizeHandle = document.getElementById('resize-handle');
+const elResizeHandleLeft = document.getElementById('resize-handle-left');
 const elAgenticInput = document.getElementById('agentic-input');
 const elAgenticSend = document.getElementById('btn-agentic-send');
 const elAgenticClear = document.getElementById('btn-agentic-clear');
 const elAgenticConversation = document.getElementById('agentic-conversation');
-const elAgenticBackend = document.getElementById('agentic-backend');
+const elBtnSettings = document.getElementById('btn-settings');
+const elSettingsModal = document.getElementById('settings-modal');
+const elBtnSettingsClose = document.getElementById('btn-settings-close');
+const elSettingsBackend = document.getElementById('settings-backend');
+const elSettingsSessionSelect = document.getElementById('settings-session-select');
+const elBtnNewSession = document.getElementById('btn-new-session');
 const elGcaStatus = document.getElementById('gca-status');
 const elGcaVault = document.getElementById('gca-vault');
 const elPackagesList = document.getElementById('packages-list');
@@ -203,7 +209,7 @@ function renderTree(container, tree, depth, expanded = new Set()) {
             item.appendChild(toggle);
             const name = document.createElement('span');
             name.className = 'vfs-item-name';
-            name.textContent = key;
+            name.textContent = `${isExpanded ? '📂' : '📁'} ${key}`;
             item.appendChild(name);
             const childContainer = document.createElement('div');
             childContainer.style.display = isExpanded ? '' : 'none';
@@ -212,6 +218,7 @@ function renderTree(container, tree, depth, expanded = new Set()) {
                 const nowExpanded = childContainer.style.display !== 'none';
                 childContainer.style.display = nowExpanded ? 'none' : '';
                 toggle.textContent = nowExpanded ? '▸' : '▾';
+                name.textContent = `${nowExpanded ? '📁' : '📂'} ${key}`;
             };
             container.appendChild(item);
             container.appendChild(childContainer);
@@ -226,7 +233,7 @@ function renderTree(container, tree, depth, expanded = new Set()) {
                 badgeEl.textContent = badge;
                 name.prepend(badgeEl);
             }
-            name.appendChild(document.createTextNode(key));
+            name.appendChild(document.createTextNode(`📄 ${key}`));
             name.onclick = () => loadFileToEditor(node.path);
             const actions = document.createElement('div');
             actions.className = 'vfs-actions';
@@ -389,16 +396,61 @@ async function loadProjectFromServer(projectId) {
     await loadAgenticHistory(projectId);
 }
 
-async function loadAgenticHistory(projectId) {
+async function loadSessions() {
+    if (!currentProjectId) return;
     try {
-        const msgs = await api(`/api/projects/${projectId}/conversations?limit=50`);
+        const sessions = await api(`/api/agentic/projects/${currentProjectId}/sessions`);
+        elSettingsSessionSelect.innerHTML = '';
+        sessions.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = `Session #${s.id} (${s.status}) - ${new Date(s.created_at).toLocaleTimeString('fr-FR')}`;
+            if (s.status === 'active') opt.selected = true;
+            elSettingsSessionSelect.appendChild(opt);
+        });
+    } catch (e) {
+        console.warn('Error loading sessions:', e.message);
+    }
+}
+
+async function selectSession(sessionId) {
+    if (!sessionId) return;
+    try {
+        const msgs = await api(`/api/agentic/sessions/${sessionId}/conversations`);
         elAgenticConversation.innerHTML = '';
         if (!msgs || msgs.length === 0) {
-            elAgenticConversation.innerHTML = '<div class="sys-msg">Posez une question à l\'agent.</div>';
+            elAgenticConversation.innerHTML = '<div class="sys-msg">Aucun message dans cette session.</div>';
             return;
         }
         for (const m of msgs) {
             addAgenticMessage(m.role, m.content);
+        }
+    } catch (e) {
+        logToTerminal(`Erreur lors du chargement de la session: ${e.message}`, 'error-msg');
+    }
+}
+
+async function startNewSession() {
+    if (!currentProjectId) return;
+    try {
+        const session = await api(`/api/agentic/projects/${currentProjectId}/sessions/new`, { method: 'POST' });
+        logToTerminal(`Nouvelle session #${session.id} démarrée.`, 'sys-msg');
+        await loadSessions();
+        const activeId = elSettingsSessionSelect.value;
+        if (activeId) await selectSession(activeId);
+    } catch (e) {
+        logToTerminal(`Erreur création session: ${e.message}`, 'error-msg');
+    }
+}
+
+async function loadAgenticHistory(projectId) {
+    try {
+        await loadSessions();
+        const activeSessionId = elSettingsSessionSelect.value;
+        if (activeSessionId) {
+            await selectSession(activeSessionId);
+        } else {
+            elAgenticConversation.innerHTML = '<div class="sys-msg">Posez une question à l\'agent.</div>';
         }
     } catch {
         elAgenticConversation.innerHTML = '<div class="sys-msg">Posez une question à l\'agent.</div>';
@@ -515,7 +567,7 @@ async function sendAgenticMessage() {
     elAgenticInput.value = '';
     addAgenticMessage('user', msg);
     if (!await ensureProjectForAgentic()) return;
-    const backend = elAgenticBackend.value;
+    const backend = elSettingsBackend.value;
 
     // Create a placeholder for streaming
     const placeholder = addAgenticMessage('system', '🤖 Agent en cours...');
@@ -943,6 +995,56 @@ function switchTab(tabId) {
     if (content) content.classList.add('active');
 }
 
+// Settings Modal bindings
+if (elBtnSettings) {
+    elBtnSettings.onclick = () => {
+        elSettingsModal.classList.add('open');
+        loadSessions();
+    };
+}
+if (elBtnSettingsClose) {
+    elBtnSettingsClose.onclick = () => {
+        elSettingsModal.classList.remove('open');
+    };
+}
+if (elSettingsSessionSelect) {
+    elSettingsSessionSelect.onchange = (e) => {
+        selectSession(e.target.value);
+    };
+}
+if (elBtnNewSession) {
+    elBtnNewSession.onclick = () => {
+        startNewSession();
+    };
+}
+
+// Resize handle for left sidebar/editor panes
+if (elResizeHandleLeft) {
+    let isDragging = false;
+    elResizeHandleLeft.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        elResizeHandleLeft.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const sidebarPane = document.getElementById('sidebar-files');
+        const editorPane = document.querySelector('.editor-pane');
+        let newW = e.clientX;
+        newW = Math.max(150, Math.min(400, newW));
+        sidebarPane.style.width = newW + 'px';
+    });
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            elResizeHandleLeft.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
+}
+
 // Resize handle for editor/results panes
 if (elResizeHandle) {
     let isDragging = false;
@@ -956,8 +1058,9 @@ if (elResizeHandle) {
         if (!isDragging) return;
         const resultsPane = document.querySelector('.results-pane');
         const editorPane = document.querySelector('.editor-pane');
-        const totalW = editorPane.offsetWidth + resultsPane.offsetWidth + elResizeHandle.offsetWidth;
-        let resultsW = totalW - e.clientX;
+        const sidebarPane = document.getElementById('sidebar-files');
+        const totalW = document.body.clientWidth - sidebarPane.offsetWidth - elResizeHandleLeft.offsetWidth - elResizeHandle.offsetWidth;
+        let resultsW = document.body.clientWidth - e.clientX;
         resultsW = Math.max(250, Math.min(totalW - 250, resultsW));
         resultsPane.style.width = resultsW + 'px';
         resultsPane.style.flex = 'none';
