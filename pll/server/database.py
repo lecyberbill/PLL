@@ -17,7 +17,7 @@ class Base(DeclarativeBase):
 
 async def init_db():
     """Create all tables if they don't exist, run migrations."""
-    from models import Project, Artifact, AgentSession, GCAVault, Package, Conversation  # noqa: F401
+    from models import Project, Artifact, AgentSession, GCAVault, Package, Conversation, PendingChange  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     # Auto-migration: add source_content to packages if missing

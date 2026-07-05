@@ -68,3 +68,14 @@ class Package(Base):
     entry = Column(String(1024), default="lib.pll")
     downloads = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class PendingChange(Base):
+    __tablename__ = "pending_changes"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    session_id = Column(Integer, ForeignKey("agent_sessions.id"))
+    path = Column(String(1024), nullable=False)
+    old_content = Column(Text, default="")
+    new_content = Column(Text, default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

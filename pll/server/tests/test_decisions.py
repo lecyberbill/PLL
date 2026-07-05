@@ -110,4 +110,41 @@ async def test_semantic_rag():
     assert len(res) == 1
     assert res[0]["key"] == "v2.pll"
 
+from routes.agentic import accept_pending_changes, reject_pending_changes, list_pending_changes
+from models import PendingChange, Project
+
+@pytest.mark.anyio
+async def test_collaboration_actions():
+    pc = PendingChange(id=1, project_id=1, session_id=1, path="test.txt", old_content="old", new_content="new")
+    project = Project(id=1, disk_path="dummy_path")
+    
+    class MockResult:
+        def scalars(self):
+            return self
+        def all(self):
+            return [pc]
+
+    class CollaborationDB:
+        def __init__(self):
+            self.deleted = []
+        async def execute(self, query):
+            return MockResult()
+        async def get(self, model, pk):
+            return project
+        async def delete(self, item):
+            self.deleted.append(item)
+        async def commit(self):
+            pass
+
+    db = CollaborationDB()
+    
+    res = await list_pending_changes(session_id=1, db=db)
+    assert len(res) == 1
+    assert res[0]["path"] == "test.txt"
+    
+    res_accept = await accept_pending_changes(session_id=1, db=db)
+    assert res_accept["status"] == "ok"
+    assert len(db.deleted) == 1
+
+
 

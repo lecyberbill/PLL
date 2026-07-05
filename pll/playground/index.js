@@ -99,6 +99,38 @@ function clearEditor() {
     setEditorLanguage('plaintext');
 }
 
+if (elAgenticConversation) {
+    elAgenticConversation.addEventListener('click', async (e) => {
+        if (e.target.classList.contains('collab-btn-accept')) {
+            const container = e.target.closest('.collab-diff-container');
+            if (!container) return;
+            const sessionId = container.dataset.sessionId;
+            e.target.disabled = true;
+            try {
+                await api(`/api/agentic/sessions/${sessionId}/accept`, { method: 'POST' });
+                container.innerHTML = `<div class="sys-msg" style="color: var(--success); font-weight: bold; margin-top: 8px;">✅ Modifications validées et enregistrées.</div>`;
+                if (currentProjectId) await loadProjectFromServer(currentProjectId);
+            } catch (err) {
+                alert("Erreur lors de la validation : " + err.message);
+                e.target.disabled = false;
+            }
+        } else if (e.target.classList.contains('collab-btn-reject')) {
+            const container = e.target.closest('.collab-diff-container');
+            if (!container) return;
+            const sessionId = container.dataset.sessionId;
+            e.target.disabled = true;
+            try {
+                await api(`/api/agentic/sessions/${sessionId}/reject`, { method: 'POST' });
+                container.innerHTML = `<div class="sys-msg" style="color: var(--error); font-weight: bold; margin-top: 8px;">❌ Modifications rejetées et fichiers restaurés.</div>`;
+                if (currentProjectId) await loadProjectFromServer(currentProjectId);
+            } catch (err) {
+                alert("Erreur lors du rejet : " + err.message);
+                e.target.disabled = false;
+            }
+        }
+    });
+}
+
 function clearDefaults() {
     filesList = [];
     openFiles = [];
@@ -677,15 +709,64 @@ async function sendAgenticMessage() {
         clearInterval(thinkingTimer);
         placeholder.remove();
 
+        let collabHtml = '';
+        const elSessionSelect = document.getElementById('agentic-session-select');
+        const activeSessionId = elSessionSelect ? elSessionSelect.value : null;
+        if (activeSessionId) {
+            try {
+                const pendings = await api(`/api/agentic/sessions/${activeSessionId}/pending`);
+                if (pendings && pendings.length > 0) {
+                    collabHtml += `<div class="collab-diff-container" data-session-id="${activeSessionId}">`;
+                    collabHtml += `<h4>Modifications de code proposées :</h4>`;
+                    for (const pc of pendings) {
+                        collabHtml += `<div class="collab-file-diff">`;
+                        collabHtml += `<strong>📄 ${pc.path}</strong>`;
+                        
+                        const oldLines = pc.old_content ? pc.old_content.split('\n') : [];
+                        const newLines = pc.new_content ? pc.new_content.split('\n') : [];
+                        
+                        let diffLines = [];
+                        let i = 0, j = 0;
+                        while (i < oldLines.length || j < newLines.length) {
+                            if (i < oldLines.length && j < newLines.length && oldLines[i] === newLines[j]) {
+                                diffLines.push(`  ${oldLines[i]}`);
+                                i++;
+                                j++;
+                            } else {
+                                if (i < oldLines.length) {
+                                    diffLines.push(`<span class="diff-removed">- ${oldLines[i]}</span>`);
+                                    i++;
+                                }
+                                if (j < newLines.length) {
+                                    diffLines.push(`<span class="diff-added">+ ${newLines[j]}</span>`);
+                                    j++;
+                                }
+                            }
+                        }
+                        
+                        collabHtml += `<pre><code>${diffLines.slice(0, 50).join('\n')}${diffLines.length > 50 ? '\n... (tronqué)' : ''}</code></pre>`;
+                        collabHtml += `</div>`;
+                    }
+                    collabHtml += `<div class="collab-actions">`;
+                    collabHtml += `<button class="btn btn-sm btn-primary collab-btn-accept">✅ Valider</button>`;
+                    collabHtml += `<button class="btn btn-sm btn-secondary collab-btn-reject">❌ Rejeter et annuler</button>`;
+                    collabHtml += `</div>`;
+                    collabHtml += `</div>`;
+                }
+            } catch (err) {
+                console.error("Error loading pending changes:", err);
+            }
+        }
+
         if (finalCode && finalPath) {
             if (!filesList.includes(finalPath)) filesList.push(finalPath);
-            addAgenticMessage('assistant', `${stepsHtml}\n\n✅ **Terminé** — fichiers créés. Consulte l'onglet Fichiers.`);
+            addAgenticMessage('assistant', `${stepsHtml}\n\n✅ **Terminé** — fichiers créés. Consulte l'onglet Fichiers.\n${collabHtml}`);
             if (currentProjectId) await loadProjectFromServer(currentProjectId);
         } else if (answer) {
-            addAgenticMessage('assistant', stepsHtml ? `${stepsHtml}\n\n${answer}` : answer);
+            addAgenticMessage('assistant', stepsHtml ? `${stepsHtml}\n\n${answer}\n${collabHtml}` : `${answer}\n${collabHtml}`);
             if (currentProjectId) await loadProjectFromServer(currentProjectId);
         } else {
-            addAgenticMessage('assistant', stepsHtml || '✅ Terminé.');
+            addAgenticMessage('assistant', stepsHtml ? `${stepsHtml}\n${collabHtml}` : `✅ Terminé.\n${collabHtml}`);
             if (currentProjectId) await loadProjectFromServer(currentProjectId);
         }
     } catch (e) {

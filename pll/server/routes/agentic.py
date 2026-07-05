@@ -528,3 +528,58 @@ async def create_new_project_session(project_id: int, db: AsyncSession = Depends
     await db.refresh(new_session)
     return new_session
 
+
+from models import PendingChange
+
+@router.get("/sessions/{session_id}/pending")
+async def list_pending_changes(session_id: int, db: AsyncSession = Depends(get_db)):
+    """List all pending changes for a session."""
+    res = await db.execute(
+        select(PendingChange).where(PendingChange.session_id == session_id)
+    )
+    return [{"id": pc.id, "path": pc.path, "old_content": pc.old_content, "new_content": pc.new_content} for pc in res.scalars().all()]
+
+
+@router.post("/sessions/{session_id}/accept")
+async def accept_pending_changes(session_id: int, db: AsyncSession = Depends(get_db)):
+    """Accept and confirm all pending changes (deletes records, keeps disk state)."""
+    res = await db.execute(
+        select(PendingChange).where(PendingChange.session_id == session_id)
+    )
+    pcs = res.scalars().all()
+    for pc in pcs:
+        await db.delete(pc)
+    await db.commit()
+    return {"status": "ok", "message": f"Accepted {len(pcs)} modifications."}
+
+
+@router.post("/sessions/{session_id}/reject")
+async def reject_pending_changes(session_id: int, db: AsyncSession = Depends(get_db)):
+    """Reject all pending changes (reverts disk files to old_content and deletes records)."""
+    from pathlib import Path
+    res = await db.execute(
+        select(PendingChange).where(PendingChange.session_id == session_id)
+    )
+    pcs = res.scalars().all()
+    reverted_count = 0
+    for pc in pcs:
+        from models import Project
+        project = await db.get(Project, pc.project_id)
+        if project and project.disk_path:
+            pdir = Path(project.disk_path).resolve()
+            fp = (pdir / pc.path).resolve()
+            try:
+                if not pc.old_content.strip():
+                    # If it was a new file, delete it
+                    if fp.exists():
+                        fp.unlink()
+                else:
+                    fp.parent.mkdir(parents=True, exist_ok=True)
+                    fp.write_text(pc.old_content, encoding="utf-8")
+                reverted_count += 1
+            except Exception as e:
+                print(f"Error reverting file {pc.path}: {e}")
+        await db.delete(pc)
+    await db.commit()
+    return {"status": "ok", "message": f"Rejected and reverted {reverted_count} modifications."}
+

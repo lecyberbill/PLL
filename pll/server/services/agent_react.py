@@ -642,6 +642,50 @@ class AgentReAct:
         content = _re.sub(r'^#\s*file:\s*\S+\s*\r?\n?', '', content, count=1)
         try:
             fp = await self._resolve_path(path)
+            old_content = ""
+            if fp.is_file():
+                old_content = fp.read_text(encoding="utf-8")
+
+            # Resolve session_id if not present
+            if not getattr(self, "session_id", None):
+                from models import AgentSession
+                from sqlalchemy import select
+                async with self._session_factory() as db:
+                    res = await db.execute(
+                        select(AgentSession).where(
+                            AgentSession.project_id == self.project_id,
+                            AgentSession.status != "dead"
+                        ).order_by(AgentSession.updated_at.desc()).limit(1)
+                    )
+                    sess = res.scalar_one_or_none()
+                    if sess:
+                        self.session_id = sess.id
+
+            if getattr(self, "session_id", None):
+                from models import PendingChange
+                from sqlalchemy import select
+                async with self._session_factory() as db:
+                    res = await db.execute(
+                        select(PendingChange).where(
+                            PendingChange.project_id == self.project_id,
+                            PendingChange.session_id == self.session_id,
+                            PendingChange.path == path
+                        )
+                    )
+                    pc = res.scalar_one_or_none()
+                    if not pc:
+                        pc = PendingChange(
+                            project_id=self.project_id,
+                            session_id=self.session_id,
+                            path=path,
+                            old_content=old_content,
+                            new_content=content
+                        )
+                        db.add(pc)
+                    else:
+                        pc.new_content = content
+                    await db.commit()
+
             fp.parent.mkdir(parents=True, exist_ok=True)
             fp.write_text(content, encoding="utf-8")
             return f"Written {len(content)} bytes to {path}"
@@ -1033,6 +1077,47 @@ class AgentReAct:
             if old not in content:
                 return f"ERROR: String not found in {path}"
             new_content = content.replace(old, new, 1)
+
+            # Resolve session_id if not present
+            if not getattr(self, "session_id", None):
+                from models import AgentSession
+                from sqlalchemy import select
+                async with self._session_factory() as db:
+                    res = await db.execute(
+                        select(AgentSession).where(
+                            AgentSession.project_id == self.project_id,
+                            AgentSession.status != "dead"
+                        ).order_by(AgentSession.updated_at.desc()).limit(1)
+                    )
+                    sess = res.scalar_one_or_none()
+                    if sess:
+                        self.session_id = sess.id
+
+            if getattr(self, "session_id", None):
+                from models import PendingChange
+                from sqlalchemy import select
+                async with self._session_factory() as db:
+                    res = await db.execute(
+                        select(PendingChange).where(
+                            PendingChange.project_id == self.project_id,
+                            PendingChange.session_id == self.session_id,
+                            PendingChange.path == path
+                        )
+                    )
+                    pc = res.scalar_one_or_none()
+                    if not pc:
+                        pc = PendingChange(
+                            project_id=self.project_id,
+                            session_id=self.session_id,
+                            path=path,
+                            old_content=content,
+                            new_content=new_content
+                        )
+                        db.add(pc)
+                    else:
+                        pc.new_content = new_content
+                    await db.commit()
+
             fp.write_text(new_content, encoding="utf-8")
             return f"Replaced in {path}: {len(old)} chars -> {len(new)} chars"
         except Exception as e:
