@@ -135,6 +135,7 @@ impl Lexer {
                         "bool" => Token::TypeBool, "list" => Token::TypeList,
                         "record" => Token::TypeRecord, "event" => Token::TypeEvent,
                         "true" => Token::Bool(true), "false" => Token::Bool(false),
+                        "end" => Token::End,
                         _ => Token::Ident(s),
                     }
                 }

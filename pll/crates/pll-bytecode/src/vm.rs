@@ -118,6 +118,9 @@ impl BcEnv {
         self.ip = if has_fn_table { 4 } else { 0 };
         while self.running && self.ip < self.code.len() {
             let opcode = self.code[self.ip]; self.ip += 1;
+            if let Some(op) = Opcode::from_repr(opcode) {
+                // println!("[VM TRACE] ip={:04x} opcode={:?} stack_len={}", self.ip - 1, op, self.stack.len());
+            }
             match Opcode::from_repr(opcode) {
                 Some(Opcode::Nop) => {}
                 Some(Opcode::PushNum) => {

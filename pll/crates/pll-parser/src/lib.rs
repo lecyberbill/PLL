@@ -406,6 +406,9 @@ impl Parser {
             stmts.push(self.parse_stmt()?);
             self.skip_newlines();
         }
+        if matches!(self.peek(), Token::End) && self.pos < self.tokens.len() - 1 {
+            self.advance();
+        }
         Ok(stmts)
     }
 
