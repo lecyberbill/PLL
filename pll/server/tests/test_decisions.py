@@ -68,3 +68,46 @@ async def test_capability_routing():
     ui_inst = coord._get_capability_instructions("UiCap")
     assert "user interface" in ui_inst
 
+from services.agent_brain import AgentBrain
+from models import GCAVault
+
+@pytest.mark.anyio
+async def test_semantic_rag():
+    class MockResult:
+        def __init__(self, items):
+            self.items = items
+        def scalars(self):
+            return self
+        def all(self):
+            return self.items
+
+    class MockDB:
+        def __init__(self, entries):
+            self.entries = entries
+        async def execute(self, query):
+            return MockResult(self.entries)
+
+    entries = [
+        GCAVault(project_id=1, key="v1.pll", content='**Request:** "Save user"\ncode: "..."'),
+        GCAVault(project_id=1, key="v2.pll", content='**Request:** "Render HTML page"\ncode: "..."')
+    ]
+    
+    db = MockDB(entries)
+    brain = AgentBrain(db)
+    
+    import services.agent_brain as ab
+    original_chat_completion = ab.chat_completion
+    
+    async def mock_chat_completion(*args, **kwargs):
+        return {"response": "[1]"}
+        
+    ab.chat_completion = mock_chat_completion
+    try:
+        res = await brain._retrieve_similar_examples(project_id=1, query="Render HTML", top_k=1, backend="test")
+    finally:
+        ab.chat_completion = original_chat_completion
+        
+    assert len(res) == 1
+    assert res[0]["key"] == "v2.pll"
+
+

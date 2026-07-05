@@ -415,39 +415,72 @@ class AgentBrain:
     # RAG: Retrieve similar examples from vault
     # ------------------------------------------------------------------
     async def _retrieve_similar_examples(
-        self, project_id: int, query: str, top_k: int = 5
+        self, project_id: int, query: str, top_k: int = 5, backend: str = ""
     ) -> list[dict]:
-        """Simple keyword-based RAG: find vault entries matching the query."""
-        keywords = self._extract_keywords(query)
-        if not keywords:
-            return []
-
+        """Semantic RAG: Query recent vault entries, rank using LLM semantic matching, return top_k."""
         result = await self.db.execute(
             select(GCAVault)
             .where(GCAVault.project_id == project_id)
             .order_by(GCAVault.created_at.desc())
-            .limit(100)
+            .limit(30)
         )
         entries = result.scalars().all()
+        if not entries:
+            return []
 
-        scored = []
-        for entry in entries:
-            content_lower = entry.content.lower()
-            score = sum(1 for kw in keywords if kw in content_lower)
-            if score > 0:
-                # Extract request and code from vault entry
-                request = self._extract_vault_field(entry.content, "**Request:**")
-                code = self._extract_vault_code(entry.content)
-                scored.append({
-                    "score": score,
-                    "key": entry.key,
-                    "request": request or "(no request)",
-                    "code": code or "(no code)",
-                    "content": entry.content,
-                })
+        prompt = (
+            f"User request: {query}\n\n"
+            "Below is a list of past examples from the vault:\n"
+        )
+        for idx, entry in enumerate(entries):
+            req_text = self._extract_vault_field(entry.content, "**Request:**") or entry.content[:200]
+            prompt += f"[{idx}] Key: {entry.key}\nRequest/Objective: {req_text}\n\n"
+            
+        prompt += (
+            f"Analyze the semantic meaning of the User Request and select the top {top_k} most relevant examples from the list above. "
+            "Return the list as a JSON array of indices, e.g. [2, 0]. Output ONLY the JSON array, no other text."
+        )
 
-        scored.sort(key=lambda x: x["score"], reverse=True)
-        return scored[:top_k]
+        try:
+            res = await chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                system_prompt="You are a semantic ranking agent. Output ONLY a valid JSON array of indices.",
+                temperature=0.1,
+                backend=backend,
+            )
+            resp_text = res["response"].strip()
+            import json, re
+            json_match = re.search(r'\[\s*\d+\s*(?:,\s*\d+\s*)*\]', resp_text)
+            if json_match:
+                indices = json.loads(json_match.group(0))
+                selected = []
+                for idx in indices:
+                    if 0 <= idx < len(entries):
+                        entry = entries[idx]
+                        request = self._extract_vault_field(entry.content, "**Request:**")
+                        code = self._extract_vault_code(entry.content)
+                        selected.append({
+                            "key": entry.key,
+                            "request": request or "(no request)",
+                            "code": code or "(no code)",
+                            "content": entry.content,
+                        })
+                return selected[:top_k]
+        except Exception as e:
+            print("Error during semantic ranking:", e)
+
+        # Fallback to returning the first top_k recent entries if ranking fails
+        selected = []
+        for entry in entries[:top_k]:
+            request = self._extract_vault_field(entry.content, "**Request:**")
+            code = self._extract_vault_code(entry.content)
+            selected.append({
+                "key": entry.key,
+                "request": request or "(no request)",
+                "code": code or "(no code)",
+                "content": entry.content,
+            })
+        return selected
 
     @staticmethod
     def _extract_keywords(text: str) -> list[str]:
