@@ -51,6 +51,8 @@ const elBtnSettingsClose = document.getElementById('btn-settings-close');
 const elSettingsBackend = document.getElementById('settings-backend');
 const elSettingsSessionSelect = document.getElementById('settings-session-select');
 const elBtnNewSession = document.getElementById('btn-new-session');
+const elAgenticSessionSelect = document.getElementById('agentic-session-select');
+const elBtnAgenticNewSession = document.getElementById('btn-agentic-new-session');
 const elSettingsEnableGca = document.getElementById('settings-enable-gca');
 const elTabBtnGca = document.getElementById('tab-btn-gca');
 const elBtnRunCode = document.getElementById('btn-run-code');
@@ -422,12 +424,16 @@ async function loadSessions() {
     try {
         const sessions = await api(`/api/agentic/projects/${currentProjectId}/sessions`);
         elSettingsSessionSelect.innerHTML = '';
+        if (elAgenticSessionSelect) elAgenticSessionSelect.innerHTML = '';
+        
         sessions.forEach(s => {
             const opt = document.createElement('option');
             opt.value = s.id;
             opt.textContent = `Session #${s.id} (${s.status}) - ${new Date(s.created_at).toLocaleTimeString('fr-FR')}`;
             if (s.status === 'active') opt.selected = true;
-            elSettingsSessionSelect.appendChild(opt);
+            
+            elSettingsSessionSelect.appendChild(opt.cloneNode(true));
+            if (elAgenticSessionSelect) elAgenticSessionSelect.appendChild(opt);
         });
     } catch (e) {
         console.warn('Error loading sessions:', e.message);
@@ -436,6 +442,8 @@ async function loadSessions() {
 
 async function selectSession(sessionId) {
     if (!sessionId) return;
+    if (elSettingsSessionSelect) elSettingsSessionSelect.value = sessionId;
+    if (elAgenticSessionSelect) elAgenticSessionSelect.value = sessionId;
     try {
         const msgs = await api(`/api/agentic/sessions/${sessionId}/conversations`);
         elAgenticConversation.innerHTML = '';
@@ -1087,6 +1095,11 @@ if (elSettingsSessionSelect) {
         selectSession(e.target.value);
     };
 }
+if (elAgenticSessionSelect) {
+    elAgenticSessionSelect.onchange = (e) => {
+        selectSession(e.target.value);
+    };
+}
 if (elSettingsEnableGca) {
     elSettingsEnableGca.onchange = (e) => {
         const val = e.target.checked;
@@ -1096,6 +1109,11 @@ if (elSettingsEnableGca) {
 }
 if (elBtnNewSession) {
     elBtnNewSession.onclick = () => {
+        startNewSession();
+    };
+}
+if (elBtnAgenticNewSession) {
+    elBtnAgenticNewSession.onclick = () => {
         startNewSession();
     };
 }

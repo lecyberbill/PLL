@@ -75,7 +75,11 @@
                     <div class="agentic-panel">
                         <div class="agentic-header">
                             <h3>Agent de Développement 🤖</h3>
-                            <div class="agentic-controls">
+                            <div class="agentic-controls" style="display: flex; gap: 8px; align-items: center;">
+                                <select id="agentic-session-select" class="btn btn-sm btn-secondary" style="background: var(--bg-dark); color: var(--fg-light); border: 1px solid var(--border-color); cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 13px; max-width: 250px;">
+                                    <option value="">-- Aucune session --</option>
+                                </select>
+                                <button id="btn-agentic-new-session" class="btn btn-sm btn-secondary" title="Nouvelle Session">➕ Session</button>
                                 <button id="btn-agentic-clear" class="btn btn-sm btn-secondary">Effacer</button>
                             </div>
                         </div>
