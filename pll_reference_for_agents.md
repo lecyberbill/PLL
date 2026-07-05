@@ -35,30 +35,41 @@ cond and cond   cond or cond          # Logique
 not cond                              # Négation
 ```
 
-### 1.5 Contrôle de flux
+### 1.5 Contrôle de flux et délimitation de blocs
+
+Le compilateur PLL n'utilise pas l'indentation de ligne ni les accolades `{}` pour délimiter les blocs. À la place, il analyse les énoncés séquentiellement. Pour éviter qu'une structure imbriquée (comme un `if` ou un `while`) n'avale le reste du code qui la suit, vous devez utiliser le mot-clé **`end`** pour fermer explicitement chaque bloc.
+
 ```pll
 if condition:
     corps
 else:
     corps_alternatif
+end
 
 while condition:
     corps
+end
 
 return valeur
 ```
 
 ### 1.6 Fonctions
+
+Les fonctions se déclarent de la même manière et doivent également être terminées par `end` si elles contiennent du code à la suite de structures imbriquées :
+
 ```pll
 fn double(n: num) -> num:
     return n * 2
+end
 
 fn greet(name: String) -> String:
     return str_concat("Hello, ", name)
+end
 
 # Paramètres par défaut : num
 fn add(a, b):
     return a + b
+end
 ```
 
 ### 1.7 Listes
@@ -119,7 +130,11 @@ Les agents réagissent à des événements via `emit Msg {}`. Le runtime injecte
 fn factorial(n: num) -> num:
     if n <= 1:
         return 1
+    else:
+        noop = 0
+    end
     return n * factorial(n - 1)
+end
 
 v result != factorial(5)
 render str_from_num(result)
@@ -137,12 +152,18 @@ fn tokenize(input: String) -> List:
         v ch != str_char_at(input, pos)
         if ch == " ":
             pos = pos + 1
-        if ch == "+":
-            v tok != Token {kind: "OP", value: "+", line: 1, col: pos}
-            tokens = list_push(tokens, tok)
-            pos = pos + 1
-        # ... autres caractères
+        else:
+            if ch == "+":
+                v tok != Token {kind: "OP", value: "+", line: 1, col: pos}
+                tokens = list_push(tokens, tok)
+                pos = pos + 1
+            else:
+                noop = 0
+            end
+        end
+    end
     return tokens
+end
 ```
 
 ## 4. Exécution
