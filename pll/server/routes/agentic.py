@@ -215,6 +215,9 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
         ).order_by(Conversation.created_at.desc()).limit(10)
     )
     conv_msgs = list(reversed(conv_result.scalars().all()))
+    from services.agent_brain import sync_decision_tree
+    await sync_decision_tree(active_session, req.message, conv_msgs, db, req.backend)
+
     conv_history = ""
     if conv_msgs:
         conv_history = "\n\n## Conversation précédente:\n" + "\n".join(
@@ -222,8 +225,21 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
             for c in conv_msgs[-5:]
         )
 
-    # Append history to the message
-    augmented_msg = req.message + conv_history
+    decisions_summary = ""
+    try:
+        state_data = json.loads(active_session.current_state)
+        decisions = state_data.get("decisions", [])
+        active_decs = [d for d in decisions if d.get("status") != "overridden"]
+        if active_decs:
+            decisions_summary = "\n\n## Décisions et choix validés :\n" + "\n".join(
+                f"- {d['question']} -> {d['answer']}"
+                for d in active_decs
+            )
+    except Exception:
+        pass
+
+    # Append history and decisions to the message
+    augmented_msg = req.message + conv_history + decisions_summary
 
     # Save user message linked to active session
     db.add(Conversation(
@@ -282,7 +298,9 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
     context_str = (
         f"## Project: {project.name}\n"
         f"Files: {', '.join(file_names) if file_names else '(empty)'}\n"
-        f"Description: {project.description or ''}"
+        f"Description: {project.description or ''}\n"
+        f"{decisions_summary}\n"
+        f"{conv_history}"
     )
     agent = AgentReAct(req.project_id, req.backend, max_steps=50)
     result = await agent.run(orchestration["instruction"], context_str)
@@ -327,13 +345,30 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
             ).order_by(Conversation.created_at.desc()).limit(10)
         )
         conv_msgs = list(reversed(conv_result.scalars().all()))
+        from services.agent_brain import sync_decision_tree
+        await sync_decision_tree(active_session, req.message, conv_msgs, db, req.backend)
+
         conv_history = ""
         if conv_msgs:
             conv_history = "\n\n## Conversation précédente:\n" + "\n".join(
                 f"{'Utilisateur' if c.role == 'user' else 'Assistant'}: {c.content}"
                 for c in conv_msgs[-5:]
             )
-        augmented_msg = req.message + conv_history
+
+        decisions_summary = ""
+        try:
+            state_data = json.loads(active_session.current_state)
+            decisions = state_data.get("decisions", [])
+            active_decs = [d for d in decisions if d.get("status") != "overridden"]
+            if active_decs:
+                decisions_summary = "\n\n## Décisions et choix validés :\n" + "\n".join(
+                    f"- {d['question']} -> {d['answer']}"
+                    for d in active_decs
+                )
+        except Exception:
+            pass
+
+        augmented_msg = req.message + conv_history + decisions_summary
 
         # Gather files
         files_result = await db.execute(
@@ -380,7 +415,9 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
             context_str = (
                 f"## Project: {project.name}\n"
                 f"Files: {', '.join(file_names) if file_names else '(empty)'}\n"
-                f"Description: {project.description or ''}"
+                f"Description: {project.description or ''}\n"
+                f"{decisions_summary}\n"
+                f"{conv_history}"
             )
             from services.agent_react import AgentReAct
             agent = AgentReAct(req.project_id, req.backend, max_steps=50)

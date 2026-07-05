@@ -682,3 +682,69 @@ class AgentBrain:
         }]
         stem = "_".join(keywords[:3]).lower() if keywords else "generated"
         return f"{stem}{ext}"
+
+
+async def sync_decision_tree(session: AgentSession, new_message: str, conv_msgs: list, db: AsyncSession, backend: str = ""):
+    import json
+    from datetime import datetime, timezone
+    from services.llm_proxy import chat_completion
+
+    try:
+        state_data = json.loads(session.current_state) if session.current_state and session.current_state.strip().startswith("{") else {}
+    except Exception:
+        state_data = {}
+        
+    decisions = state_data.get("decisions", [])
+    steps = state_data.get("steps", [])
+    
+    prompt = (
+        f"Current Decision Log:\n{json.dumps(decisions, indent=2)}\n\n"
+        f"Recent conversation:\n" + "\n".join(f"{c.role.upper()}: {c.content}" for c in conv_msgs[-3:]) + f"\nUSER: {new_message}\n\n"
+        "Analyze if any new decisions/requirements have been made, or if any previous decisions have been changed or overridden.\n"
+        "Output the UPDATED list of decisions in JSON format containing a list of objects: "
+        "[{\"question\": \"...\", \"answer\": \"...\", \"status\": \"active|overridden\"}]. "
+        "Only output valid JSON block, nothing else."
+    )
+    
+    try:
+        res = await chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are a decision log synchronizer. Output ONLY a valid JSON array of decisions inside markdown brackets.",
+            temperature=0.1,
+            backend=backend,
+        )
+        resp_text = res["response"].strip()
+        import re
+        json_match = re.search(r'\[\s*\{.*\}\s*\]', resp_text, re.DOTALL)
+        if json_match:
+            new_decisions = json.loads(json_match.group(0))
+            decisions = new_decisions
+    except Exception as e:
+        print("Error updating decision log:", e)
+        
+    steps.append(f"User request: {new_message[:80]}")
+    
+    state_data["decisions"] = decisions
+    state_data["steps"] = steps
+    session.current_state = json.dumps(state_data)
+    
+    md_content = f"# Decision Tree & Clarification Log - Session {session.id}\n\n"
+    md_content += "## Active Decisions\n\n"
+    for d in decisions:
+        status_str = " (Modifiée/Annulée)" if d.get("status") == "overridden" else ""
+        md_content += f"- **Question:** {d.get('question')}\n  **Décision:** {d.get('answer')}{status_str}\n\n"
+    
+    md_content += "\n## Historique de la Discussion\n\n"
+    for c in conv_msgs:
+        md_content += f"**{c.role.upper()}:** {c.content}\n\n"
+    md_content += f"**USER:** {new_message}\n\n"
+    
+    from services.gca_orchestrator import GCAOrchestrator
+    orch = GCAOrchestrator(db)
+    await orch._write_vault(
+        project_id=session.project_id,
+        session_id=session.id,
+        key=f"session_{session.id}_decisions.md",
+        content=md_content
+    )
+
