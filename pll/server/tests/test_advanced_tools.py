@@ -83,3 +83,22 @@ async def test_run_pll(tmp_path):
     })
     assert "test run pll output" in res
 
+@pytest.mark.anyio
+async def test_native_pll_parsing():
+    text = """
+I am going to check the files in the directory.
+```pll
+v content != read_file("src/main.rs")
+write_file("backup.rs", content)
+```
+Let me know if this looks good.
+"""
+    calls = AgentReAct._parse_tool_calls(text)
+    assert len(calls) == 2
+    assert calls[0]["tool"] == "read_file"
+    assert calls[0]["args"]["path"] == "src/main.rs"
+    assert calls[1]["tool"] == "write_file"
+    assert calls[1]["args"]["path"] == "backup.rs"
+    assert calls[1]["args"]["content"] == "content"
+
+

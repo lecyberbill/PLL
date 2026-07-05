@@ -274,6 +274,154 @@ class AgentReAct:
         return None
 
     @staticmethod
+    def tokenize_debug_format(s: str) -> list:
+        import re, ast
+        token_specification = [
+            ('STRING',  r'"[^"\\]*(?:\\.[^"\\]*)*"'),
+            ('NUMBER',  r'-?\d+(?:\.\d+)?'),
+            ('IDENT',   r'[a-zA-Z_][a-zA-Z0-9_\-]*'),
+            ('PUNCT',   r'[{}[\]():,]'),
+            ('WS',      r'\s+'),
+        ]
+        tok_regex = '|'.join('(?P<%s>%s)' % pair for pair in token_specification)
+        tokens = []
+        for mo in re.finditer(tok_regex, s):
+            kind = mo.lastgroup
+            val = mo.group()
+            if kind == 'WS':
+                continue
+            elif kind == 'STRING':
+                val = ast.literal_eval(val)
+            elif kind == 'NUMBER':
+                val = float(val) if '.' in val else int(val)
+            tokens.append((kind, val))
+        return tokens
+
+    @classmethod
+    def _parse_pll_block_via_cli(cls, block_text: str) -> list[dict]:
+        import subprocess, tempfile, os
+        from pathlib import Path
+        binary = None
+        here = Path(__file__).resolve().parent.parent.parent
+        for c in [here / "target" / "release" / "pll-cli.exe", here / "target" / "release" / "pll-cli"]:
+            if c.exists():
+                binary = str(c.resolve())
+                break
+        if not binary:
+            return []
+            
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".pll", delete=False, encoding="utf-8") as f:
+                f.write(block_text)
+                tmp_path = f.name
+            r = subprocess.run([binary, "ast", tmp_path], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
+            os.unlink(tmp_path)
+            if r.returncode != 0:
+                return []
+            
+            debug_str = r.stdout
+            tokens = cls.tokenize_debug_format(debug_str)
+            if not tokens:
+                return []
+                
+            pos = 0
+            def peek():
+                return tokens[pos] if pos < len(tokens) else None
+            def advance():
+                nonlocal pos
+                t = peek()
+                pos += 1
+                return t
+                
+            def parse_value():
+                t = peek()
+                if not t: return None
+                if t[0] in ('STRING', 'NUMBER'):
+                    advance()
+                    return t[1]
+                if t[0] == 'IDENT':
+                    name = advance()[1]
+                    nxt = peek()
+                    if nxt and nxt[1] == '{':
+                        advance()
+                        fields = {}
+                        while peek() and peek()[1] != '}':
+                            f_name = advance()[1]
+                            if peek() and peek()[1] == ':':
+                                advance()
+                            fields[f_name] = parse_value()
+                            if peek() and peek()[1] == ',': advance()
+                        if peek() and peek()[1] == '}':
+                            advance()
+                        return {'type': name, 'fields': fields}
+                    elif nxt and nxt[1] == '(':
+                        advance()
+                        args = []
+                        while peek() and peek()[1] != ')':
+                            args.append(parse_value())
+                            if peek() and peek()[1] == ',': advance()
+                        if peek() and peek()[1] == ')':
+                            advance()
+                        return {'type': name, 'args': args}
+                    else:
+                        return name
+                if t[1] == '[':
+                    advance()
+                    items = []
+                    while peek() and peek()[1] != ']':
+                        items.append(parse_value())
+                        if peek() and peek()[1] == ',': advance()
+                    if peek() and peek()[1] == ']':
+                        advance()
+                    return items
+                advance()
+                return None
+                
+            parsed = parse_value()
+            
+            def extract_expr_value(node):
+                if not isinstance(node, dict): return str(node)
+                t = node.get('type')
+                if t == 'Spanned':
+                    return extract_expr_value(node['fields']['value'])
+                elif t == 'Literal':
+                    if 'args' in node and node['args']:
+                        val = node['args'][0]
+                        if isinstance(val, dict):
+                            v_type = val.get('type')
+                            if v_type in ('Str', 'Num', 'Bool'):
+                                return val['args'][0]
+                        return str(val)
+                    return ""
+                elif t == 'Ident':
+                    if 'args' in node and node['args']:
+                        return node['args'][0]
+                    return ""
+                return str(node)
+                
+            def find_calls(node):
+                calls = []
+                if isinstance(node, dict):
+                    if node.get('type') == 'Call':
+                        if 'args' in node and len(node['args']) >= 2:
+                            name = node['args'][0]
+                            args_list = []
+                            for arg_node in node['args'][1]:
+                                args_list.append(extract_expr_value(arg_node))
+                            calls.append({'tool': name, 'args_list': args_list})
+                    else:
+                        for v in node.values():
+                            calls.extend(find_calls(v))
+                elif isinstance(node, list):
+                    for item in node:
+                        calls.extend(find_calls(item))
+                return calls
+                
+            return find_calls(parsed)
+        except Exception:
+            return []
+
+    @staticmethod
     def _parse_tool_calls(text: str) -> list[dict]:
         """Parse ALL PLL function calls or XML tool calls from text. Returns list of {tool, args} dicts."""
         calls = []
@@ -283,6 +431,23 @@ class AgentReAct:
             "final_answer", "rename_file", "zip_project", "replace_content",
             "start_task", "get_task_status", "kill_task", "list_tasks", "list_symbols", "ask_expert"
         }
+
+        # 0. Try parsing native PLL blocks in markdown format first
+        import re as _re
+        blocks = _re.findall(r'```pll\s*([\s\S]*?)```', text)
+        if not blocks:
+            blocks = _re.findall(r'```\s*([\s\S]*?)```', text)
+            
+        for block in blocks:
+            raw_calls = AgentReAct._parse_pll_block_via_cli(block)
+            for c in raw_calls:
+                t_name = c["tool"]
+                if t_name in known_tools:
+                    mapped_args = map_args(t_name, c["args_list"])
+                    calls.append({"tool": t_name, "args": mapped_args})
+        
+        if calls:
+            return calls
 
         # 1. Fallback: Parse XML-style tool calls (e.g. from DeepSeek or internal formats)
         if "<tool_call>" in text:
