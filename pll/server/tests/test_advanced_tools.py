@@ -74,3 +74,12 @@ async def test_list_symbols(tmp_path):
     res = await agent._tool_list_symbols({"path": "code.py"})
     assert "Class: MyClass" in res
     assert "Function: my_function" in res
+
+@pytest.mark.anyio
+async def test_run_pll(tmp_path):
+    agent = DummyAgent(tmp_path)
+    res = await agent._tool_run_pll({
+        "code": "render \"test run pll output\"\n"
+    })
+    assert "test run pll output" in res
+

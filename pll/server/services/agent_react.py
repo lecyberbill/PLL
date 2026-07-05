@@ -20,6 +20,7 @@ write_file("app.py", "content")       # write a file
 list_dir(".")                         # list directory
 exec_shell("npm install")             # run a command
 probe_path("D:\\folder")             # check if path exists
+run_pll("render \"hello\"")           # compile & execute PLL code
 """
 
 def parse_write_file_fallback(call_str: str) -> dict | None:
@@ -127,6 +128,8 @@ def map_args(tool: str, args_list: list) -> dict:
         if len(args_list) >= 1: args["task_id"] = args_list[0]
     elif tool == "ask_expert":
         if len(args_list) >= 1: args["prompt"] = args_list[0]
+    elif tool in ("run_pll", "exec_pll"):
+        if len(args_list) >= 1: args["code"] = args_list[0]
     return args
 
 TOOL_DESCRIPTIONS = f"""
@@ -201,6 +204,10 @@ list_symbols("src/parser.py")
 ### ask_expert(prompt)
 Ask another expert AI model for advice, a second opinion, or a code review.
 ask_expert("Why does this test fail? [code snippet]")
+
+### run_pll(code)
+Compile and execute a snippet of PLL code locally. Use this to do deterministic mathematical calculations or logical validations. Returns output stdout and stderr.
+run_pll("v a != 5\nrender str_from_num(a)")
 
 ### final_answer(text)
 Call this when the task is complete.
@@ -755,6 +762,9 @@ class AgentReAct:
             if not r["ok"]:
                 return f"Clone failed: {r['err']}"
             return f"Cloned {url} successfully."
+
+    async def _tool_run_pll(self, args: dict) -> str:
+        return await self._tool_exec_pll(args)
 
     async def _tool_exec_pll(self, args: dict) -> str:
         code = args.get("code", "")
