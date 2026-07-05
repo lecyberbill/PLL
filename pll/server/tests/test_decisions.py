@@ -56,3 +56,15 @@ async def test_sync_decision_tree():
     assert len(db.added) == 1
     assert db.added[0].key == "session_None_decisions.md"
     assert "SQLite" in db.added[0].content
+
+from services.agent_coordinator import AgentCoordinator
+
+@pytest.mark.anyio
+async def test_capability_routing():
+    coord = AgentCoordinator(project_id=1, backend="test")
+    storage_inst = coord._get_capability_instructions("StorageCap")
+    assert "database" in storage_inst
+    
+    ui_inst = coord._get_capability_instructions("UiCap")
+    assert "user interface" in ui_inst
+

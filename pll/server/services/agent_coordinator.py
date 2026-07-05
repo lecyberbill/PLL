@@ -14,12 +14,18 @@ from services.agent_react import AgentReAct
 PLL_PLANNER_SYSTEM = """
 You are a PLL planning agent. Decompose the user's request into subtasks.
 Output ONLY a PLL variable declaration containing a list of subtask records,
-with EXACTLY ONE file per subtask:
+with EXACTLY ONE file per subtask, and its required capability:
 
 v subtasks != [
-    {description: "what to do", file: "path/to/file.ts"},
-    {description: "another task", file: "path/to/other.ts"}
+    {description: "what to do", file: "path/to/file.ts", capability: "StorageCap"},
+    {description: "another task", file: "path/to/other.ts", capability: "UiCap"}
 ]
+
+Capabilities available:
+- StorageCap: specialized in database schemas, models, migrations, local/remote storage, query optimization.
+- UiCap: specialized in frontend pages, React/Vue components, CSS/Tailwind layouts, user experience, responsiveness.
+- NetworkCap: specialized in API endpoints, SSE streams, network protocols, middleware, fetch clients.
+- LogicCap: specialized in business rules, algorithms, utility functions, data transformations.
 
 Rules:
 - ONE file per subtask — never bundle multiple files together.
@@ -36,6 +42,31 @@ class AgentCoordinator:
         self.project_id = project_id
         self.backend = backend
 
+    @staticmethod
+    def _get_capability_instructions(capability: str) -> str:
+        inst = {
+            "StorageCap": (
+                "You are specialized in database design, schemas, models, migrations, local/remote storage, "
+                "query optimization, and CRUD operations. Implement robust data-access functions, "
+                "proper SQL/ORM mappings, and handle database sessions or files carefully."
+            ),
+            "UiCap": (
+                "You are specialized in user interface, layouts, React/Vue components, styling, responsiveness, "
+                "accessibility, and frontend logic. Follow modern UI best practices, use curated CSS variables, "
+                "and ensure clean interactive elements."
+            ),
+            "NetworkCap": (
+                "You are specialized in network protocols, API routing, endpoints, SSE streaming, middleware, "
+                "fetch requests, and security headers. Create clean, restful endpoints, validate inputs, "
+                "and handle CORS and errors correctly."
+            ),
+            "LogicCap": (
+                "You are specialized in business rules, complex algorithms, utility functions, state management, "
+                "and data structures. Implement clean, modular logic, optimize runtime performance, and add unit tests."
+            )
+        }
+        return inst.get(capability, inst["LogicCap"])
+
     async def orchestrate(self, user_message: str, context: str = "") -> dict:
         subtasks = await self._plan(user_message, context)
         if not subtasks:
@@ -44,8 +75,14 @@ class AgentCoordinator:
 
         results = []
         for i, subtask in enumerate(subtasks):
+            raw_path = subtask.get("file", "")
+            capability = subtask.get("capability", "LogicCap")
+            cap_instructions = self._get_capability_instructions(capability)
+            
             agent = AgentReAct(self.project_id, self.backend, max_steps=20)
             prompt = (
+                f"# Capability required: {capability}\n"
+                f"# Specialization Instructions:\n# {cap_instructions}\n\n"
                 f"# Subtask {i + 1}/{len(subtasks)}: {subtask['description']}\n"
                 f"# Target file: {raw_path}\n"
                 f"# IMPORTANT: Write the file at EXACTLY this relative path (no extra directory prefix).\n"
@@ -57,8 +94,7 @@ class AgentCoordinator:
                 f"# Previous subtask result: {results[-1]['result'][:200] if results else 'none'}"
             )
             result = await agent.run(prompt, context)
-            # Sanitize file path: remove any top-level dir prefix that matches project name
-            raw_path = subtask.get("file", "")
+            
             parts = raw_path.replace("\\", "/").split("/")
             if len(parts) > 1 and parts[0] not in ("src", "app", "lib", "components", "public", "."):
                 clean_path = "/".join(parts[1:])
@@ -67,6 +103,7 @@ class AgentCoordinator:
             results.append({
                 "subtask": subtask["description"],
                 "expected_file": clean_path,
+                "capability": capability,
                 "result": result.get("answer", ""),
                 "code": result.get("code", ""),
                 "file_path": result.get("file_path", ""),
