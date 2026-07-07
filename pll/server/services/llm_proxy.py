@@ -1,5 +1,5 @@
 """
-[WFGY] Zone: SAFE | λ: 0.1 | Fallbacks: 1/DP_API_KEY Uppercase Fallback | Action: Support uppercase DP_API_KEY environment variable
+[WFGY] Zone: SAFE | λ: 0.2 | Fallbacks: 2/DP_API_KEY Fallback, Semantic Jaccard Cache | Action: Support semantic LLM cache and uppercase DP_API_KEY environment variable
 LLM Proxy Service
 
 Supports two backends:
@@ -15,10 +15,86 @@ DeepSeek API key is read from env var `Dp_API_KEY`.
 """
 import json
 import os
+import re
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 from urllib.parse import urlencode
+
+
+class SemanticLLMCache:
+    def __init__(self, filepath: str, threshold: float = 0.85):
+        self.filepath = Path(filepath)
+        self.threshold = threshold
+        self.cache = []
+        self.load()
+
+    def load(self):
+        if self.filepath.exists():
+            try:
+                with open(self.filepath, "r", encoding="utf-8") as f:
+                    self.cache = json.load(f)
+            except Exception:
+                self.cache = []
+
+    def save(self):
+        try:
+            with open(self.filepath, "w", encoding="utf-8") as f:
+                json.dump(self.cache, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _tokenize(self, text: str) -> set[str]:
+        return set(re.findall(r"\w+", text.lower()))
+
+    def lookup(self, system_prompt: str, messages: list[dict], backend: str, model: str) -> dict | None:
+        query_text = system_prompt + "\n" + "\n".join(m.get("content", "") for m in messages)
+        query_tokens = self._tokenize(query_text)
+        if not query_tokens:
+            return None
+
+        best_match = None
+        best_sim = 0.0
+
+        for entry in self.cache:
+            if entry.get("backend") != backend or entry.get("model") != model:
+                continue
+            
+            cached_text = entry.get("system_prompt", "") + "\n" + entry.get("prompt_text", "")
+            cached_tokens = self._tokenize(cached_text)
+            if not cached_tokens:
+                continue
+
+            intersection = len(query_tokens & cached_tokens)
+            union = len(query_tokens | cached_tokens)
+            sim = intersection / union if union > 0 else 0
+
+            if sim >= self.threshold and sim > best_sim:
+                best_sim = sim
+                best_match = entry
+
+        if best_match:
+            print(f"[LLM_CACHE] Semantic match found (similarity {best_sim:.2f})")
+            return best_match.get("response")
+        return None
+
+    def store(self, system_prompt: str, messages: list[dict], backend: str, model: str, response: dict):
+        prompt_text = "\n".join(m.get("content", "") for m in messages)
+        entry = {
+            "system_prompt": system_prompt,
+            "prompt_text": prompt_text,
+            "backend": backend,
+            "model": model,
+            "response": response
+        }
+        self.cache.append(entry)
+        if len(self.cache) > 500:
+            self.cache.pop(0)
+        self.save()
+
+
+_cache_file = os.path.join(os.path.dirname(__file__), "llm_cache.json")
+llm_cache = SemanticLLMCache(_cache_file)
 
 # Load .env before reading config (in case config.py wasn't imported yet)
 _env_path = Path(__file__).parent.parent / ".env"
@@ -230,13 +306,23 @@ async def chat_completion(
     backend: str = "",
 ) -> dict:
     """Send a chat completion request to the configured LLM backend (with cache)."""
-    full_messages = [{"role": "system", "content": system_prompt}] + messages
     backend = backend or DEFAULT_BACKEND
+    
+    # Try semantic cache lookup
+    cached = llm_cache.lookup(system_prompt, messages, backend, model)
+    if cached is not None:
+        return cached
+
+    full_messages = [{"role": "system", "content": system_prompt}] + messages
 
     if backend == "deepseek":
-        return await _call_deepseek(full_messages, temperature, max_tokens, model)
+        res = await _call_deepseek(full_messages, temperature, max_tokens, model)
     else:
-        return await _call_lmstudio(full_messages, temperature, max_tokens, model)
+        res = await _call_lmstudio(full_messages, temperature, max_tokens, model)
+
+    # Store in cache
+    llm_cache.store(system_prompt, messages, backend, model, res)
+    return res
 
 
 async def _call_deepseek(messages, temperature, max_tokens, model=""):

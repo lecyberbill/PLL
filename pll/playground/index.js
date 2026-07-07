@@ -3,6 +3,8 @@ import { set_virtual_file, get_virtual_file } from './pkg/pll_wasm.js';
 
 const API_BASE = '';
 let monaco, editor;
+let monacoDiffEditor = null;
+let gitAheadFiles = [];
 let filesList = [];
 let openFiles = [];
 let activeFile = null;
@@ -204,7 +206,7 @@ function renderVfsList() {
             const parent = el.closest('.vfs-item');
             if (parent) {
                 const nameEl = parent.querySelector('.vfs-item-name');
-                if (nameEl) expanded.add(nameEl.textContent);
+                if (nameEl && nameEl.dataset.path) expanded.add(nameEl.dataset.path);
             }
         }
     });
@@ -223,10 +225,10 @@ function renderVfsList() {
             }
         }
     }
-    renderTree(elVfsList, tree, 0, expanded);
+    renderTree(elVfsList, tree, 0, expanded, '');
 }
 
-function renderTree(container, tree, depth, expanded = new Set()) {
+function renderTree(container, tree, depth, expanded = new Set(), parentPath = '') {
     const keys = Object.keys(tree).sort((a, b) => {
         const ta = tree[a].type, tb = tree[b].type;
         if (ta !== tb) return ta === 'dir' ? -1 : 1;
@@ -234,24 +236,26 @@ function renderTree(container, tree, depth, expanded = new Set()) {
     });
     for (const key of keys) {
         const node = tree[key];
+        const currentPath = parentPath ? `${parentPath}/${key}` : key;
         const item = document.createElement('div');
         item.className = 'vfs-item';
         item.style.paddingLeft = (12 + depth * 16) + 'px';
         if (node.type === 'dir') {
             const toggle = document.createElement('span');
             toggle.className = 'vfs-toggle';
-            const isExpanded = expanded.has(key);
+            const isExpanded = expanded.has(currentPath);
             toggle.textContent = isExpanded ? '▾' : '▸';
             toggle.style.cursor = 'pointer';
             toggle.style.marginRight = '4px';
             item.appendChild(toggle);
             const name = document.createElement('span');
             name.className = 'vfs-item-name';
+            name.dataset.path = currentPath;
             name.textContent = `${isExpanded ? '📂' : '📁'} ${key}`;
             item.appendChild(name);
             const childContainer = document.createElement('div');
             childContainer.style.display = isExpanded ? '' : 'none';
-            renderTree(childContainer, node.children, depth + 1, expanded);
+            renderTree(childContainer, node.children, depth + 1, expanded, currentPath);
             toggle.onclick = () => {
                 const nowExpanded = childContainer.style.display !== 'none';
                 childContainer.style.display = nowExpanded ? 'none' : '';
@@ -264,15 +268,44 @@ function renderTree(container, tree, depth, expanded = new Set()) {
             const name = document.createElement('span');
             name.className = `vfs-item-name ${node.path === activeFile ? 'active' : ''}`;
             name.dataset.path = node.path;
-            const badge = gitFileStatus[node.path];
-            if (badge) {
-                const badgeEl = document.createElement('span');
-                badgeEl.className = `vfs-git-badge ${badge === '?' ? 'untracked' : badge === 'D' ? 'deleted' : badge === 'M' ? 'modified' : 'staged'}`;
-                badgeEl.textContent = badge;
-                name.prepend(badgeEl);
-            }
-            name.appendChild(document.createTextNode(`📄 ${key}`));
             name.onclick = () => loadFileToEditor(node.path);
+
+            const badge = gitFileStatus[node.path];
+            let badgeText = '';
+            let statusClass = '';
+            let tooltipText = '';
+            let textColor = '';
+            
+            if (badge) {
+                badgeText = badge;
+                statusClass = badge === '?' ? 'untracked' : badge === 'D' ? 'deleted' : badge === 'M' ? 'modified' : 'staged';
+                tooltipText = badge === '?' ? 'Non suivi — Nouveau fichier' : badge === 'D' ? 'Supprimé' : badge === 'M' ? 'Modifié — Modifications locales non indexées' : 'Indexé — Prêt à être commité';
+                textColor = badge === '?' ? '#2dd4bf' : badge === 'D' ? '#f87171' : badge === 'M' ? '#eab308' : '#22c55e';
+            } else if (gitAheadFiles.includes(node.path)) {
+                badgeText = '↑';
+                statusClass = 'ahead';
+                tooltipText = 'Commité localement — En attente de push';
+                textColor = '#60a5fa';
+            } else if (currentProjectId) {
+                badgeText = '✓';
+                statusClass = 'synced';
+                tooltipText = 'Synchronisé avec le dépôt';
+                textColor = '#a5b4fc'; // Subtle violet/indigo
+            }
+            
+            if (statusClass) {
+                const badgeEl = document.createElement('span');
+                badgeEl.className = `vfs-git-badge ${statusClass}`;
+                badgeEl.textContent = badgeText;
+                badgeEl.title = tooltipText;
+                badgeEl.style.marginRight = '6px';
+                name.appendChild(badgeEl);
+            }
+
+            const textNode = document.createElement('span');
+            textNode.textContent = `📄 ${key}`;
+            if (textColor) textNode.style.color = textColor;
+            name.appendChild(textNode);
             const actions = document.createElement('div');
             actions.className = 'vfs-actions';
             const btnRename = document.createElement('button');
@@ -458,6 +491,11 @@ async function loadSessions() {
         elSettingsSessionSelect.innerHTML = '';
         if (elAgenticSessionSelect) elAgenticSessionSelect.innerHTML = '';
         
+        const sidebarList = document.getElementById('sidebar-sessions-list');
+        if (sidebarList) sidebarList.innerHTML = '';
+
+        const activeId = elAgenticSessionSelect ? elAgenticSessionSelect.value : null;
+
         sessions.forEach(s => {
             const opt = document.createElement('option');
             opt.value = s.id;
@@ -466,29 +504,211 @@ async function loadSessions() {
             
             elSettingsSessionSelect.appendChild(opt.cloneNode(true));
             if (elAgenticSessionSelect) elAgenticSessionSelect.appendChild(opt);
+            
+            if (sidebarList) {
+                const item = document.createElement('div');
+                const isSelected = String(s.id) === String(activeId) || (s.status === 'active' && !activeId);
+                item.className = `session-sidebar-item ${isSelected ? 'active' : ''}`;
+                item.style.cssText = `padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: ${isSelected ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.02)'}; cursor: pointer; display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px;`;
+                item.onclick = () => selectSession(s.id);
+                
+                const header = document.createElement('div');
+                header.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+                header.innerHTML = `<span style="font-weight: bold; font-size: 12px; color: var(--text-primary);">Session #${s.id}</span> <span class="badge ${s.status}" style="font-size: 9px; padding: 2px 4px; border-radius: 2px; text-transform: uppercase; background: ${s.status === 'active' ? 'var(--success)' : 'var(--text-muted)'}; color: white;">${s.status}</span>`;
+                
+                const time = document.createElement('div');
+                time.style.cssText = 'font-size: 10px; color: var(--text-muted);';
+                time.textContent = new Date(s.created_at).toLocaleString('fr-FR');
+                
+                item.appendChild(header);
+                item.appendChild(time);
+                sidebarList.appendChild(item);
+            }
         });
+        syncTabs();
     } catch (e) {
         console.warn('Error loading sessions:', e.message);
     }
+}
+
+// Sync tabs with session dropdown — compact, scrollable, with close button
+function syncTabs() {
+    const tabsContainer = document.getElementById('agentic-tabs');
+    if (!tabsContainer || !elAgenticSessionSelect) return;
+    tabsContainer.innerHTML = '';
+    const activeId = elAgenticSessionSelect.value;
+    const allOptions = [...elAgenticSessionSelect.options].filter(o => o.value);
+    const activeOptions = allOptions.filter(o => !o.textContent.includes('(archived)'));
+    
+    // Show last 8 active sessions max, older ones go to overflow
+    const show = activeOptions.slice(-8);
+    if (activeOptions.length > 8) {
+        const overflow = document.createElement('button');
+        overflow.className = 'agentic-tab';
+        overflow.textContent = `⋯ +${activeOptions.length - 8}`;
+        overflow.title = `${activeOptions.length - 8} sessions plus anciennes`;
+        overflow.onclick = () => {
+            elAgenticSessionSelect.value = activeOptions[activeOptions.length - 9]?.value || show[0]?.value;
+            elAgenticSessionSelect.dispatchEvent(new Event('change'));
+        };
+        tabsContainer.appendChild(overflow);
+    }
+    for (const opt of show) {
+        const tab = document.createElement('button');
+        tab.className = `agentic-tab ${opt.value === activeId ? 'active' : ''}`;
+        const num = opt.textContent.match(/#(\d+)/)?.[1] || '?';
+        // Close button
+        const closeBtn = document.createElement('span');
+        closeBtn.textContent = '✕';
+        closeBtn.style.cssText = 'margin-left:3px;font-size:9px;opacity:0.5;cursor:pointer;';
+        closeBtn.title = 'Archiver';
+        closeBtn.onclick = async (e) => {
+            e.stopPropagation();
+            try {
+                await api(`/api/agentic/sessions/${opt.value}/archive`, { method: 'POST' });
+                await loadSessions();
+                if (opt.value === activeId) {
+                    const remainingActive = [...elAgenticSessionSelect.options].filter(o => o.value && !o.textContent.includes('(archived)'));
+                    if (remainingActive.length > 0) {
+                        elAgenticSessionSelect.value = remainingActive[0].value;
+                        elAgenticSessionSelect.dispatchEvent(new Event('change'));
+                    } else {
+                        await startNewSession();
+                    }
+                }
+            } catch {
+                await startNewSession();
+            }
+        };
+        tab.textContent = `#${num}`;
+        tab.title = opt.textContent;
+        tab.dataset.sid = opt.value;
+        tab.onclick = () => { elAgenticSessionSelect.value = opt.value; elAgenticSessionSelect.dispatchEvent(new Event('change')); };
+        tab.appendChild(closeBtn);
+        tabsContainer.appendChild(tab);
+    }
+}
+
+function renderStepsGraph(steps) {
+    let graphWrapper = document.getElementById('agentic-steps-graph-replay');
+    if (!graphWrapper) {
+        graphWrapper = document.createElement('div');
+        graphWrapper.id = 'agentic-steps-graph-replay';
+        graphWrapper.className = 'agentic-message system';
+        graphWrapper.style.cssText = 'border: 1px solid var(--border-color); background: rgba(0,0,0,0.15); padding: 12px; margin: 8px 0; border-radius: 8px;';
+    }
+    
+    // Always append at the end of the history
+    elAgenticConversation.appendChild(graphWrapper);
+
+    if (!steps || steps.length === 0) {
+        graphWrapper.style.display = 'none';
+        return;
+    }
+    graphWrapper.style.display = 'block';
+    graphWrapper.innerHTML = '<strong>Pensée de l\'Agent (Session Replay) :</strong><div class="agent-nodes-container" style="margin-top: 8px;"></div>';
+    const graphContainer = graphWrapper.querySelector('.agent-nodes-container');
+    
+    steps.forEach((step, idx) => {
+        const icons = { read_file: '📖', write_file: '✏️', glob_files: '🔍', grep_files: '🔍', list_dir: '📂', exec_shell: '💻', git_status: '⎇', git_commit: '📝', git_init: '🔧', web_fetch: '🌐', web_search: '🔎', probe_path: '🔎', final_answer: '✅' };
+        const icon = icons[step.tool] || '➡️';
+        
+        if (idx > 0) {
+            const arrow = document.createElement('div');
+            arrow.className = 'agent-node-arrow';
+            arrow.textContent = '🠗';
+            graphContainer.appendChild(arrow);
+        }
+        
+        const node = document.createElement('div');
+        node.className = 'agent-node active';
+        
+        let details = '';
+        if (step.result) {
+            details = step.result.replace(/\n/g, ' ').slice(0, 100);
+        }
+        
+        const isErr = step.result && step.result.startsWith('ERROR');
+        node.innerHTML = `
+            <span class="agent-node-icon">${icon}</span>
+            <span class="agent-node-title">${step.tool}</span>
+            <span class="agent-node-details">${escHtml(details)}</span>
+            <span class="agent-node-status ${isErr ? 'error' : 'success'}">${isErr ? 'Erreur' : 'Succès'}</span>
+        `;
+        graphContainer.appendChild(node);
+    });
 }
 
 async function selectSession(sessionId) {
     if (!sessionId) return;
     if (elSettingsSessionSelect) elSettingsSessionSelect.value = sessionId;
     if (elAgenticSessionSelect) elAgenticSessionSelect.value = sessionId;
+    
+    // Highlight sidebar item
+    document.querySelectorAll('.session-sidebar-item').forEach(el => {
+        el.style.background = 'rgba(255,255,255,0.02)';
+    });
+    const sidebarList = document.getElementById('sidebar-sessions-list');
+    if (sidebarList) {
+        // Refresh sessions list to update active highlight
+        setTimeout(async () => {
+            const activeItems = sidebarList.children;
+            for (let i = 0; i < activeItems.length; i++) {
+                const num = activeItems[i].querySelector('span').textContent.match(/#(\d+)/)?.[1];
+                if (String(num) === String(sessionId)) {
+                    activeItems[i].style.background = 'rgba(255,255,255,0.08)';
+                }
+            }
+        }, 50);
+    }
+
     try {
         const msgs = await api(`/api/agentic/sessions/${sessionId}/conversations`);
         elAgenticConversation.innerHTML = '';
         if (!msgs || msgs.length === 0) {
             elAgenticConversation.innerHTML = '<div class="sys-msg">Aucun message dans cette session.</div>';
+            updateContextMeter(0);
             return;
         }
         for (const m of msgs) {
             addAgenticMessage(m.role, m.content);
         }
+
+        // Fetch saved steps and show graph
+        try {
+            const session = await api(`/api/agentic/sessions/${sessionId}`);
+            const state = session.current_state ? JSON.parse(session.current_state) : {};
+            const steps = state.steps || [];
+            renderStepsGraph(steps);
+        } catch (e) {
+            console.warn('Error loading session steps:', e);
+        }
+
+        // Context meter: total chars / 20000 limit
+        const totalChars = msgs.reduce((sum, m) => sum + (m.content ? m.content.length : 0), 0);
+        updateContextMeter(totalChars);
     } catch (e) {
         logToTerminal(`Erreur lors du chargement de la session: ${e.message}`, 'error-msg');
     }
+}
+
+// Context usage meter — shows in the agentic header
+function updateContextMeter(totalChars) {
+    const maxChars = 20000;
+    const pct = Math.min(100, Math.round((totalChars / maxChars) * 100));
+    let meter = document.getElementById('context-meter');
+    if (!meter) {
+        meter = document.createElement('div');
+        meter.id = 'context-meter';
+        meter.style.cssText = 'height:3px;border-radius:2px;background:var(--border-color);flex:1;min-width:60px;margin:0 8px;overflow:hidden;';
+        const header = document.querySelector('.agentic-header');
+        if (header) header.appendChild(meter);
+    }
+    const bar = document.createElement('div');
+    bar.style.cssText = `height:100%;width:${pct}%;border-radius:2px;transition:width 0.3s;background:${pct > 90 ? 'var(--error)' : pct > 70 ? 'var(--warning)' : 'var(--success)'};`;
+    meter.innerHTML = '';
+    meter.appendChild(bar);
+    meter.title = `Contexte: ${totalChars} / ${maxChars} caractères (${pct}%)`;
 }
 
 async function startNewSession() {
@@ -562,6 +782,45 @@ async function refreshGitStatus() {
         } else {
             elGitRemote.textContent = '';
             elGitRemote.className = '';
+        }
+
+        // Populate Git Sidebar Accordion List
+        gitAheadFiles = st.ahead_files || [];
+        const gitList = document.getElementById('sidebar-git-list');
+        if (gitList) {
+            gitList.innerHTML = '';
+            const fileStatuses = [
+                ...st.staged.map(f => ({ path: f, badge: 'A', color: 'var(--success)' })),
+                ...st.modified.map(f => ({ path: f, badge: 'M', color: 'var(--warning)' })),
+                ...st.untracked.map(f => ({ path: f, badge: '?', color: 'rgba(255,255,255,0.4)' })),
+                ...st.deleted.map(f => ({ path: f, badge: 'D', color: 'var(--error)' }))
+            ];
+            
+            if (fileStatuses.length === 0) {
+                gitList.innerHTML = '<div style="font-size: 11px; color: var(--text-muted); font-style: italic; padding: 4px;">Aucun changement</div>';
+            } else {
+                fileStatuses.forEach(fs => {
+                    const item = document.createElement('div');
+                    item.className = 'vfs-item';
+                    item.style.cssText = 'padding: 4px 8px; border-radius: var(--radius-sm); font-size: 12px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;';
+                    item.onclick = () => {
+                        showGitDiffModal(false);
+                        setTimeout(() => {
+                            const dropdown = document.getElementById('diff-files-dropdown');
+                            if (dropdown) {
+                                dropdown.value = fs.path;
+                                dropdown.dispatchEvent(new Event('change'));
+                            }
+                        }, 100);
+                    };
+                    
+                    item.innerHTML = `
+                        <span style="font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px;" title="${fs.path}">${fs.path.split('/').pop()}</span>
+                        <span style="font-size: 10px; font-weight: bold; padding: 1px 4px; border-radius: 2px; background: rgba(0,0,0,0.2); color: ${fs.color}; border: 1px solid ${fs.color}; font-family: var(--font-mono);">${fs.badge}</span>
+                    `;
+                    gitList.appendChild(item);
+                });
+            }
         }
     } catch (e) {
         elGitBranch.textContent = '⎇ — (erreur)';
@@ -649,12 +908,15 @@ async function sendAgenticMessage() {
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let stepsHtml = '';
         let answer = '';
         let finalCode = '';
         let finalPath = '';
-        let subtaskResults = [];
         let thinkingDots = 0;
+
+        // Create a wrapper for visual node graphing
+        const graphWrapper = addAgenticMessage('system', '<strong>Pensée de l\'Agent :</strong><div class="agent-nodes-container"></div>');
+        const graphContainer = graphWrapper.querySelector('.agent-nodes-container');
+
         let thinkingTimer = setInterval(() => {
             thinkingDots = (thinkingDots + 1) % 4;
             const dots = '.'.repeat(thinkingDots);
@@ -678,26 +940,107 @@ async function sendAgenticMessage() {
                         const ev = JSON.parse(line.slice(6));
                         if (ev.type === 'mode') {
                             placeholder.textContent = `🤖 Agent · mode ${ev.mode}`;
+                        } else if (ev.type === 'require_confirmation') {
+                            placeholder.textContent = `⚠️ Commande en attente d'autorisation`;
+                            
+                            const confirmDiv = document.createElement('div');
+                            confirmDiv.className = 'agentic-message system hitl-confirmation-panel';
+                            confirmDiv.style.cssText = 'border: 1px solid var(--warning); background: rgba(245,158,11,0.1); padding: 12px; margin: 8px 0; border-radius: 8px;';
+                            confirmDiv.innerHTML = `
+                                <strong>🔒 Autorisation requise</strong>
+                                <div style="margin: 8px 0; font-family: monospace; font-size: 13px; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; word-break: break-all;">
+                                    ${escHtml(ev.command)}
+                                </div>
+                                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                    <button class="hitl-btn-approve" style="background: var(--success); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Autoriser ✅</button>
+                                    <button class="hitl-btn-reject" style="background: var(--error); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">Refuser ❌</button>
+                                </div>
+                            `;
+                            
+                            confirmDiv.querySelector('.hitl-btn-approve').onclick = async () => {
+                                confirmDiv.querySelectorAll('button').forEach(b => b.disabled = true);
+                                try {
+                                    await api(`/api/agentic/sessions/${ev.session_id}/confirm_command`, {
+                                        method: 'POST',
+                                        body: JSON.stringify({ approved: true })
+                                    });
+                                    confirmDiv.innerHTML = `<div>✅ Commande autorisée : <code>${escHtml(ev.command)}</code></div>`;
+                                } catch (err) {
+                                    alert("Erreur d'envoi : " + err.message);
+                                }
+                            };
+                            confirmDiv.querySelector('.hitl-btn-reject').onclick = async () => {
+                                confirmDiv.querySelectorAll('button').forEach(b => b.disabled = true);
+                                try {
+                                    await api(`/api/agentic/sessions/${ev.session_id}/confirm_command`, {
+                                        method: 'POST',
+                                        body: JSON.stringify({ approved: false })
+                                    });
+                                    confirmDiv.innerHTML = `<div>❌ Commande refusée : <code>${escHtml(ev.command)}</code></div>`;
+                                } catch (err) {
+                                    alert("Erreur d'envoi : " + err.message);
+                                }
+                            };
+                            
+                            elAgenticConversation.appendChild(confirmDiv);
+                            elAgenticConversation.scrollTop = elAgenticConversation.scrollHeight;
                         } else if (ev.type === 'step') {
                             const icons = { read_file: '📖', write_file: '✏️', glob_files: '🔍', grep_files: '🔍', list_dir: '📂', exec_shell: '💻', git_status: '⎇', git_commit: '📝', git_init: '🔧', web_fetch: '🌐', web_search: '🔎', probe_path: '🔎', final_answer: '✅' };
                             const icon = icons[ev.tool] || '➡️';
-                            let labelLine = `${icon} **${ev.tool}**`;
-                            if (ev.result) {
-                                if (ev.result.startsWith('ERROR')) {
-                                    labelLine += ` ⚠️ ${ev.result.slice(0, 200)}`;
-                                } else {
-                                    labelLine += `\n\`\`\`\n${ev.result.slice(0, 800)}\n\`\`\``;
-                                }
+                            
+                            // Find and finalize last running subtask node if exists
+                            document.querySelectorAll('.agent-node-status.running').forEach(el => {
+                                el.className = 'agent-node-status success';
+                                el.textContent = 'Terminé';
+                            });
+
+                            if (graphContainer.children.length > 0) {
+                                const arrow = document.createElement('div');
+                                arrow.className = 'agent-node-arrow';
+                                arrow.textContent = '🠗';
+                                graphContainer.appendChild(arrow);
                             }
-                            stepsHtml += labelLine + '\n';
+
+                            const node = document.createElement('div');
+                            node.className = 'agent-node active';
+
+                            let details = '';
+                            if (ev.result) {
+                                details = ev.result.replace(/\n/g, ' ').slice(0, 100);
+                            }
+
+                            const isErr = ev.result && ev.result.startsWith('ERROR');
+                            node.innerHTML = `
+                                <span class="agent-node-icon">${icon}</span>
+                                <span class="agent-node-title">${ev.tool}</span>
+                                <span class="agent-node-details">${escHtml(details)}</span>
+                                <span class="agent-node-status ${isErr ? 'error' : 'success'}">${isErr ? 'Erreur' : 'Succès'}</span>
+                            `;
+                            graphContainer.appendChild(node);
+                            elAgenticConversation.scrollTop = elAgenticConversation.scrollHeight;
                         } else if (ev.type === 'explanation') {
                             placeholder.textContent = `🤖 ${ev.text.slice(0, 120)}`;
                         } else if (ev.type === 'code') {
                             finalCode = ev.code;
                             finalPath = ev.file_path;
                         } else if (ev.type === 'subtask') {
-                            subtaskResults.push(`📋 ${ev.subtask}`);
-                            stepsHtml += `📋 **${ev.subtask}**\n`;
+                            if (graphContainer.children.length > 0) {
+                                const arrow = document.createElement('div');
+                                arrow.className = 'agent-node-arrow';
+                                arrow.textContent = '🠗';
+                                graphContainer.appendChild(arrow);
+                            }
+
+                            const node = document.createElement('div');
+                            node.className = 'agent-node';
+                            node.innerHTML = `
+                                <span class="agent-node-icon">📋</span>
+                                <span class="agent-node-title">Tâche</span>
+                                <span class="agent-node-details">${escHtml(ev.subtask)}</span>
+                                <span class="agent-node-status running">En cours</span>
+                            `;
+                            graphContainer.appendChild(node);
+                            elAgenticConversation.scrollTop = elAgenticConversation.scrollHeight;
                         } else if (ev.type === 'done') {
                             answer = ev.answer;
                         }
@@ -760,13 +1103,13 @@ async function sendAgenticMessage() {
 
         if (finalCode && finalPath) {
             if (!filesList.includes(finalPath)) filesList.push(finalPath);
-            addAgenticMessage('assistant', `${stepsHtml}\n\n✅ **Terminé** — fichiers créés. Consulte l'onglet Fichiers.\n${collabHtml}`);
+            addAgenticMessage('assistant', `✅ **Terminé** — fichiers créés. Consulte l'onglet Fichiers.\n${collabHtml}`);
             if (currentProjectId) await loadProjectFromServer(currentProjectId);
         } else if (answer) {
-            addAgenticMessage('assistant', stepsHtml ? `${stepsHtml}\n\n${answer}\n${collabHtml}` : `${answer}\n${collabHtml}`);
+            addAgenticMessage('assistant', `${answer}\n${collabHtml}`);
             if (currentProjectId) await loadProjectFromServer(currentProjectId);
         } else {
-            addAgenticMessage('assistant', stepsHtml ? `${stepsHtml}\n${collabHtml}` : `✅ Terminé.\n${collabHtml}`);
+            addAgenticMessage('assistant', `✅ Terminé.\n${collabHtml}`);
             if (currentProjectId) await loadProjectFromServer(currentProjectId);
         }
     } catch (e) {
@@ -785,6 +1128,55 @@ function updateGcaTabVisibility(enabled) {
             switchTab('tab-agentic');
         }
     }
+}
+
+function switchSidebarTab(tab) {
+    const btnVfs = document.getElementById('tab-btn-vfs');
+    const btnSessions = document.getElementById('tab-btn-sessions');
+    const contentVfs = document.getElementById('sidebar-content-vfs');
+    const contentSessions = document.getElementById('sidebar-content-sessions');
+    if (!btnVfs || !btnSessions) return;
+    
+    if (tab === 'vfs') {
+        btnVfs.classList.add('active');
+        btnSessions.classList.remove('active');
+        btnVfs.style.borderBottom = '2px solid var(--accent-color)';
+        btnVfs.style.color = 'var(--text-primary)';
+        btnSessions.style.borderBottom = 'none';
+        btnSessions.style.color = 'var(--text-muted)';
+        contentVfs.style.display = 'flex';
+        contentSessions.style.display = 'none';
+    } else {
+        btnSessions.classList.add('active');
+        btnVfs.classList.remove('active');
+        btnSessions.style.borderBottom = '2px solid var(--accent-color)';
+        btnSessions.style.color = 'var(--text-primary)';
+        btnVfs.style.borderBottom = 'none';
+        btnVfs.style.color = 'var(--text-muted)';
+        contentVfs.style.display = 'none';
+        contentSessions.style.display = 'flex';
+        loadSessions();
+    }
+}
+
+function updateWorkspaceLayout(layout) {
+    const container = document.getElementById('editor-results-container');
+    const handle = document.getElementById('resize-handle');
+    if (!container || !handle) return;
+    
+    if (layout === 'bottom') {
+        container.style.flexDirection = 'column';
+        handle.style.height = '6px';
+        handle.style.width = '100%';
+        handle.style.cursor = 'row-resize';
+    } else {
+        container.style.flexDirection = 'row';
+        handle.style.height = '100%';
+        handle.style.width = '6px';
+        handle.style.cursor = 'col-resize';
+    }
+    if (editor) editor.layout();
+    if (monacoDiffEditor) monacoDiffEditor.layout();
 }
 
 async function main() {
@@ -824,8 +1216,93 @@ async function main() {
             logToTerminal('Bienvenue ! Crée ou sélectionne un projet pour commencer.', 'sys-msg');
         }
         refreshGitStatus();
+
+        // Initialize sidebar tab events
+        document.getElementById('tab-btn-vfs')?.addEventListener('click', () => switchSidebarTab('vfs'));
+        document.getElementById('tab-btn-sessions')?.addEventListener('click', () => switchSidebarTab('sessions'));
+        document.getElementById('btn-sidebar-new-session')?.addEventListener('click', startNewSession);
+
+        // Initialize layout configuration
+        const layoutSelect = document.getElementById('layout-select');
+        if (layoutSelect) {
+            const savedLayout = localStorage.getItem('pll-layout') || 'right';
+            layoutSelect.value = savedLayout;
+            updateWorkspaceLayout(savedLayout);
+            layoutSelect.addEventListener('change', (e) => {
+                const layout = e.target.value;
+                localStorage.setItem('pll-layout', layout);
+                updateWorkspaceLayout(layout);
+            });
+        }
+        
+        // Initialize Toggle Sidebar
+        document.getElementById('btn-toggle-sidebar')?.addEventListener('click', () => {
+            const sidebar = document.getElementById('sidebar-files');
+            const handle = document.getElementById('resize-handle-left');
+            if (!sidebar || !handle) return;
+            
+            if (sidebar.style.display === 'none') {
+                sidebar.style.display = 'flex';
+                handle.style.display = 'block';
+            } else {
+                sidebar.style.display = 'none';
+                handle.style.display = 'none';
+            }
+            if (editor) editor.layout();
+            if (monacoDiffEditor) monacoDiffEditor.layout();
+        });
+
+        // Initialize Collapsible Accordions
+        document.getElementById('sec-header-explorer')?.addEventListener('click', () => toggleSidebarSection('explorer'));
+        document.getElementById('sec-header-git')?.addEventListener('click', () => toggleSidebarSection('git'));
+
+        // Initialize Git Commit from Sidebar
+        document.getElementById('git-btn-commit-sidebar')?.addEventListener('click', async () => {
+            if (!currentProjectId) return;
+            const msgInput = document.getElementById('git-commit-msg-sidebar');
+            const commitMsg = msgInput.value.trim();
+            const btn = document.getElementById('git-btn-commit-sidebar');
+            btn.disabled = true;
+            btn.textContent = 'Commit...';
+            try {
+                const res = await api(`/api/git/${currentProjectId}/commit`, {
+                    method: 'POST',
+                    body: JSON.stringify({ message: commitMsg, auto_message: commitMsg === "" })
+                });
+                if (res.ok) {
+                    logToTerminal(`Git Commit: ${res.message}`, 'sys-msg');
+                    msgInput.value = '';
+                    refreshGitStatus();
+                } else {
+                    logToTerminal(`Erreur Commit: ${res.err || res.out}`, 'error-msg');
+                }
+            } catch (e) {
+                logToTerminal(`Erreur Commit: ${e.message}`, 'error-msg');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '💾 Commit';
+            }
+        });
     } catch (e) {
         logToTerminal(`Erreur: ${e}`, 'error-msg');
+    }
+}
+
+function toggleSidebarSection(sectionName) {
+    const sec = document.getElementById(`sec-${sectionName}`);
+    const content = document.getElementById(`sec-content-${sectionName}`);
+    const caret = sec.querySelector('.sec-caret');
+    if (!sec || !content || !caret) return;
+    
+    const isCollapsed = content.style.display === 'none';
+    if (isCollapsed) {
+        content.style.display = (sectionName === 'git') ? 'flex' : 'block';
+        caret.style.transform = 'rotate(90deg)';
+        sec.classList.add('active');
+    } else {
+        content.style.display = 'none';
+        caret.style.transform = 'rotate(0deg)';
+        sec.classList.remove('active');
     }
 }
 
@@ -1129,11 +1606,161 @@ elAgenticClear.addEventListener('click', () => {
     agenticConversationHistory = [];
 });
 
+const elBtnTerminalClear = document.getElementById('btn-terminal-clear');
+if (elBtnTerminalClear) {
+    elBtnTerminalClear.addEventListener('click', () => {
+        elTerminalLog.innerHTML = '<div class="sys-msg">Console PLL prête. Tapez une commande ci-dessous.</div>';
+    });
+}
+
 elBtnRefreshPackages.addEventListener('click', refreshPackages);
 
 // Git status bar debug (click to toggle)
-document.getElementById('git-status-bar').addEventListener('click', () => {
-    elGitDebug.style.display = elGitDebug.style.display === 'none' ? 'inline' : 'none';
+const gitStatusBar = document.getElementById('git-status-bar');
+if (gitStatusBar) {
+    gitStatusBar.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') return; // don't toggle on button clicks
+        elGitDebug.style.display = elGitDebug.style.display === 'none' ? 'inline' : 'none';
+    });
+}
+
+// Monaco Diff Editor Integration
+function showMonacoDiff(originalContent, modifiedContent, filePath) {
+    const container = document.getElementById('monaco-diff-container');
+    const textContent = document.getElementById('diff-content');
+    if (!container || !textContent) return;
+    
+    container.style.display = 'block';
+    textContent.style.display = 'none';
+    
+    if (!monacoDiffEditor) {
+        monacoDiffEditor = monaco.editor.createDiffEditor(container, {
+            theme: 'vs-dark',
+            automaticLayout: true,
+            readOnly: true
+        });
+    }
+    
+    const lang = detectLanguage(filePath);
+    
+    const currentModels = monacoDiffEditor.getModel();
+    if (currentModels) {
+        if (currentModels.original) currentModels.original.dispose();
+        if (currentModels.modified) currentModels.modified.dispose();
+    }
+    
+    monacoDiffEditor.setModel({
+        original: monaco.editor.createModel(originalContent, lang),
+        modified: monaco.editor.createModel(modifiedContent, lang)
+    });
+}
+
+async function showGitDiffModal(staged = false) {
+    const elModal = document.getElementById('diff-modal');
+    const elContent = document.getElementById('diff-content');
+    const elBadge = document.getElementById('diff-badge');
+    const dropdown = document.getElementById('diff-files-dropdown');
+    const container = document.getElementById('monaco-diff-container');
+    
+    elModal.classList.add('open');
+    elContent.style.display = 'block';
+    container.style.display = 'none';
+    dropdown.style.display = 'none';
+    elContent.textContent = 'Chargement...';
+    elBadge.textContent = '';
+    
+    try {
+        const st = await api(`/api/git/${currentProjectId}/status`);
+        elBadge.textContent = `⎇ ${st.branch || 'main'}`;
+        
+        const files = [];
+        if (staged) {
+            files.push(...st.staged);
+        } else {
+            files.push(...st.modified, ...st.untracked, ...st.deleted);
+        }
+        
+        if (files.length === 0) {
+            elContent.textContent = staged ? 'Aucun changement stagé.' : 'Aucune modification.';
+            return;
+        }
+        
+        dropdown.innerHTML = '';
+        files.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f;
+            opt.textContent = f;
+            dropdown.appendChild(opt);
+        });
+        dropdown.style.display = 'inline-block';
+        
+        const firstFile = files[0];
+        await loadFileDiff(firstFile);
+        
+    } catch (e) {
+        elContent.style.display = 'block';
+        container.style.display = 'none';
+        dropdown.style.display = 'none';
+        elContent.textContent = `Erreur: ${e.message}`;
+    }
+}
+
+async function loadFileDiff(filePath) {
+    try {
+        const origRes = await api(`/api/git/${currentProjectId}/show?path=${encodeURIComponent(filePath)}`);
+        const originalContent = origRes.content || "";
+        const currentContent = get_virtual_file(filePath) || "";
+        showMonacoDiff(originalContent, currentContent, filePath);
+    } catch (e) {
+        console.warn("Could not load diff for", filePath, e);
+    }
+}
+
+// Git diff button
+const gitDiffBtn = document.getElementById('git-diff-btn');
+if (gitDiffBtn) {
+    gitDiffBtn.addEventListener('click', () => showGitDiffModal(false));
+}
+
+document.getElementById('diff-files-dropdown')?.addEventListener('change', (e) => {
+    loadFileDiff(e.target.value);
+});
+
+document.getElementById('diff-btn-all')?.addEventListener('click', () => showGitDiffModal(false));
+document.getElementById('diff-btn-staged')?.addEventListener('click', () => showGitDiffModal(true));
+
+document.getElementById('diff-btn-close')?.addEventListener('click', () => {
+    document.getElementById('diff-modal').classList.remove('open');
+});
+
+// Commit Button handler
+document.getElementById('git-btn-commit')?.addEventListener('click', async () => {
+    if (!currentProjectId) return;
+    const msgInput = document.getElementById('git-commit-msg');
+    const commitMsg = msgInput.value.trim();
+    const btn = document.getElementById('git-btn-commit');
+    const elContent = document.getElementById('diff-content');
+    btn.disabled = true;
+    btn.textContent = 'Commit...';
+    try {
+        const res = await api(`/api/git/${currentProjectId}/commit`, {
+            method: 'POST',
+            body: JSON.stringify({ message: commitMsg, auto_message: commitMsg === "" })
+        });
+        if (res.ok) {
+            logToTerminal(`Git Commit: ${res.message}`, 'sys-msg');
+            msgInput.value = '';
+            elContent.textContent = 'Commit réussi avec succès !';
+            refreshGitStatus();
+        } else {
+            logToTerminal(`Erreur Commit: ${res.err || res.out}`, 'error-msg');
+        }
+    } catch (e) {
+        logToTerminal(`Erreur Commit: ${e.message}`, 'error-msg');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '💾 Commit';
+    }
 });
 
 // Load conversations on tab switch
@@ -1240,12 +1867,29 @@ if (elResizeHandle) {
         const resultsPane = document.querySelector('.results-pane');
         const editorPane = document.querySelector('.editor-pane');
         const sidebarPane = document.getElementById('sidebar-files');
-        const totalW = document.body.clientWidth - sidebarPane.offsetWidth - elResizeHandleLeft.offsetWidth - elResizeHandle.offsetWidth;
-        let resultsW = document.body.clientWidth - e.clientX;
-        resultsW = Math.max(250, Math.min(totalW - 250, resultsW));
-        resultsPane.style.width = resultsW + 'px';
-        resultsPane.style.flex = 'none';
-        editorPane.style.flex = '1';
+        const layout = localStorage.getItem('pll-layout') || 'right';
+        
+        if (layout === 'bottom') {
+            const workspace = document.querySelector('.workspace');
+            const totalH = workspace.offsetHeight - elResizeHandle.offsetHeight;
+            const workspaceRect = workspace.getBoundingClientRect();
+            let resultsH = workspaceRect.bottom - e.clientY;
+            resultsH = Math.max(150, Math.min(totalH - 150, resultsH));
+            resultsPane.style.height = resultsH + 'px';
+            resultsPane.style.width = '100%';
+            resultsPane.style.flex = 'none';
+            editorPane.style.flex = '1';
+        } else {
+            const totalW = document.body.clientWidth - sidebarPane.offsetWidth - elResizeHandleLeft.offsetWidth - elResizeHandle.offsetWidth;
+            let resultsW = document.body.clientWidth - e.clientX;
+            resultsW = Math.max(250, Math.min(totalW - 250, resultsW));
+            resultsPane.style.width = resultsW + 'px';
+            resultsPane.style.height = '100%';
+            resultsPane.style.flex = 'none';
+            editorPane.style.flex = '1';
+        }
+        if (editor) editor.layout();
+        if (monacoDiffEditor) monacoDiffEditor.layout();
     });
     document.addEventListener('mouseup', () => {
         if (isDragging) {

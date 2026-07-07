@@ -42,7 +42,7 @@ async def agentic_ask(req: AskRequest, db: AsyncSession = Depends(get_db)):
     brain = AgentBrain(db)
     try:
         result = await brain.process_request(
-            req.project_id, augmented_msg, backend=req.backend, target_file=req.target_file
+            req.project_id, req.message, backend=req.backend, target_file=req.target_file
         )
         if result.get("explanation"):
             return AskResponse(
@@ -77,7 +77,7 @@ async def agentic_chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
     """Conversational chat with RAG context from the vault."""
     brain = AgentBrain(db)
     try:
-        response = await brain.chat(req.project_id, augmented_msg)
+        response = await brain.chat(req.project_id, req.message)
         return {"response": response}
     except (ValueError, ConnectionError, RuntimeError) as e:
         raise HTTPException(400, str(e))
@@ -89,6 +89,7 @@ class GoRequest(BaseModel):
     project_id: int
     message: str
     backend: str = ""
+    session_id: Optional[int] = None
 
 
 class GoResponse(BaseModel):
@@ -118,6 +119,19 @@ async def _get_or_create_active_session(project_id: int, db: AsyncSession) -> Ag
         await db.commit()
         await db.refresh(session)
     return session
+
+
+async def _get_or_restore_session(project_id: int, req_session_id: Optional[int], db: AsyncSession) -> AgentSession:
+    if req_session_id:
+        session = await db.get(AgentSession, req_session_id)
+        if session:
+            if session.status == "archived":
+                session.status = "active"
+                session.updated_at = datetime.now(timezone.utc)
+                await db.commit()
+                await db.refresh(session)
+            return session
+    return await _get_or_create_active_session(project_id, db)
 
 
 async def _check_and_rollover_session(project_id: int, session: AgentSession, db: AsyncSession) -> AgentSession:
@@ -160,19 +174,24 @@ async def _run_orchestrator(message: str, project_name: str, file_names: list, b
     system_prompt = (
         "You are the Orchestrator (Chef d'Orchestre) of a software development agent.\n"
         "Your role is to understand the user's intent and decide whether to reply directly or delegate the task to your ReAct executor.\n\n"
-        "When to REPLY DIRECTLY:\n"
-        "- Greetings, conversation, questions asking for explanations, status checks, questions about how to run/start/use/play the project, and general discussions.\n"
-        "- In this case, simply output the text response.\n\n"
-        "When to DELEGATE:\n"
-        "- Requests to create, edit, fix, delete files, write code, run shell commands, or test the project.\n"
-        "- In this case, you MUST wrap the delegated technical instructions inside the following tag:\n"
-        "  <delegate>Technical instructions for the ReAct executor</delegate>\n"
-        "- Keep your thoughts outside the tag, but make sure the tag contains the precise instruction to execute.\n\n"
-        "Multilingual Examples:\n"
-        "- 'comment je lance le jeu ?' -> Thought: Question asking how to launch the game, no code change needed. Reply directly: 'Pour lancer le jeu, ouvrez index.html...'\n"
-        "- 'wie starte ich das?' -> Thought: German question about launching the game. Reply directly: 'Um das Spiel zu starten...'\n"
-        "- 'ajoute une fonction de log' -> Thought: Requests file modification. Delegate: <delegate>Add a logging function to the main JS file</delegate>\n"
-        "- 'run the tests' -> Thought: Requests project verification. Delegate: <delegate>Run tests on the project</delegate>"
+        "You MUST express your decision using PLL (compact inter-agent language) variable declarations.\n\n"
+        "Variables to declare:\n"
+        "- 'thought': your step-by-step reasoning (string)\n"
+        "- 'delegate': true if technical actions (creating, editing, fixing, deleting files, writing code, running shell commands, or verifying the project) are needed, false otherwise (boolean)\n"
+        "- 'instruction': technical instructions for ReAct (string, only if delegate is true)\n"
+        "- 'answer': direct reply to the user (string, only if delegate is false)\n\n"
+        "Format Rules:\n"
+        "1. Output ONLY the PLL declarations, no markdown, no explanation.\n"
+        "2. Declare variables using the syntax: v name != \"value\" or v name != true/false\n\n"
+        "Examples of PLL output:\n\n"
+        "For 'comment je lance le jeu ?':\n"
+        "v thought != \"The user is asking how to run the project. No file changes needed. Reply directly.\"\n"
+        "v delegate != false\n"
+        "v answer != \"Pour lancer le jeu, ouvrez index.html dans votre navigateur.\"\n\n"
+        "For 'ajoute une fonction de log':\n"
+        "v thought != \"The user wants to modify files to add logging. This requires technical execution.\"\n"
+        "v delegate != true\n"
+        "v instruction != \"Add a logging function to the main JS file\""
     )
     
     files_str = ", ".join(file_names) if file_names else "(empty)"
@@ -188,12 +207,26 @@ async def _run_orchestrator(message: str, project_name: str, file_names: list, b
         temperature=0.1,
         backend=backend,
     )
-    resp = result.get("response", "")
+    resp = result.get("response", "").strip()
+    
     import re
-    match = re.search(r'<delegate>(.*?)</delegate>', resp, re.DOTALL)
-    if match:
-        return {"delegate": True, "instruction": match.group(1).strip(), "raw_response": resp}
-    return {"delegate": False, "answer": resp}
+    delegate_m = re.search(r'v\s+delegate\s*!=\s*(true|false)', resp, re.IGNORECASE)
+    instruction_m = re.search(r'v\s+instruction\s*!=\s*["\']([\s\S]*?)["\']', resp)
+    answer_m = re.search(r'v\s+answer\s*!=\s*["\']([\s\S]*?)["\']', resp)
+    
+    is_delegate = False
+    if delegate_m:
+        is_delegate = (delegate_m.group(1).lower() == "true")
+    else:
+        # Fallback if variable was not declared explicitly but instruction exists
+        is_delegate = bool(instruction_m)
+        
+    if is_delegate:
+        inst = instruction_m.group(1).strip() if instruction_m else message
+        return {"delegate": True, "instruction": inst, "raw_response": resp}
+    else:
+        ans = answer_m.group(1).strip() if answer_m else resp
+        return {"delegate": False, "answer": ans}
 
 
 @router.post("/go", response_model=GoResponse)
@@ -204,7 +237,7 @@ async def agentic_go(req: GoRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Project not found")
 
     # Get active session and handle rollover if context exceeds limit
-    active_session = await _get_or_create_active_session(req.project_id, db)
+    active_session = await _get_or_restore_session(req.project_id, req.session_id, db)
     active_session = await _check_and_rollover_session(req.project_id, active_session, db)
 
     # Load conversation history for the active session (last 10 messages)
@@ -321,7 +354,7 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Project not found")
 
     # Get active session and handle rollover if context exceeds limit
-    active_session = await _get_or_create_active_session(req.project_id, db)
+    active_session = await _get_or_restore_session(req.project_id, req.session_id, db)
     active_session = await _check_and_rollover_session(req.project_id, active_session, db)
 
     async def event_stream():
@@ -421,11 +454,18 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
             )
             from services.agent_react import AgentReAct
             agent = AgentReAct(req.project_id, req.backend, max_steps=50)
+            agent.session_id = active_session.id
 
             async def step_cb(steps, step_info, current, total):
-                await _emit("step", step=current, total=total,
-                            tool=step_info.get("tool"),
-                            result=step_info.get("result", ""))
+                if step_info.get("status") == "pending_approval":
+                    await _emit("require_confirmation",
+                                tool=step_info.get("tool"),
+                                command=step_info.get("args", {}).get("cmd"),
+                                session_id=step_info.get("session_id"))
+                else:
+                    await _emit("step", step=current, total=total,
+                                tool=step_info.get("tool"),
+                                result=step_info.get("result", ""))
 
             # Run agent in background, drain queue in foreground
             async def _run_agent():
@@ -448,8 +488,24 @@ async def agentic_go_stream(req: GoRequest, db: AsyncSession = Depends(get_db)):
             if result.get("code"):
                 yield f"data: {json.dumps({'type': 'code', 'code': result['code'], 'file_path': result.get('file_path', '')})}\n\n"
 
-        # Save assistant reply linked to active session
+        # Save assistant reply linked to active session and save steps to current_state
         if answer:
+            try:
+                state_data = {}
+                if active_session.current_state:
+                    try:
+                        state_data = json.loads(active_session.current_state)
+                    except Exception:
+                        state_data = {}
+                if not isinstance(state_data, dict):
+                    state_data = {}
+                
+                state_data["steps"] = result.get("steps", [])
+                active_session.current_state = json.dumps(state_data)
+                db.add(active_session)
+            except Exception as e:
+                print(f"Error saving session steps: {e}")
+
             db.add(Conversation(
                 project_id=req.project_id,
                 session_id=active_session.id,
@@ -469,6 +525,7 @@ class SessionResponse(BaseModel):
     agent_type: str
     status: str
     generation: int
+    current_state: str = ""
     created_at: datetime
     updated_at: datetime
 
@@ -582,4 +639,43 @@ async def reject_pending_changes(session_id: int, db: AsyncSession = Depends(get
         await db.delete(pc)
     await db.commit()
     return {"status": "ok", "message": f"Rejected and reverted {reverted_count} modifications."}
+
+
+@router.post("/sessions/{session_id}/archive")
+async def archive_session(session_id: int, db: AsyncSession = Depends(get_db)):
+    """Archive a specific session by ID."""
+    session = await db.get(AgentSession, session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    session.status = "archived"
+    session.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(session)
+    return {"status": "ok", "message": f"Session {session_id} archived."}
+
+
+class ConfirmCommandRequest(BaseModel):
+    approved: bool
+
+
+@router.post("/sessions/{session_id}/confirm_command")
+async def confirm_command(session_id: int, req: ConfirmCommandRequest):
+    """Confirm or reject a pending agent command for the given session."""
+    from services.agent_react import PENDING_APPROVALS
+    pending = PENDING_APPROVALS.get(session_id)
+    if not pending:
+        raise HTTPException(404, "No pending command approval found for this session")
+    
+    pending["approved"] = req.approved
+    pending["event"].set()
+    return {"status": "ok", "message": "Command approved" if req.approved else "Command rejected"}
+
+
+@router.get("/sessions/{session_id}", response_model=SessionResponse)
+async def get_session(session_id: int, db: AsyncSession = Depends(get_db)):
+    """Get details of a specific agent session."""
+    session = await db.get(AgentSession, session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    return session
 

@@ -105,9 +105,25 @@ db_read("key")            # Récupère ("" si absent)
 emit valeur               # Émet un événement
 render valeur             # Affiche une réponse
 read_file(chemin)         # Lit un fichier → String
-write_file(chemin, contenu)  # Écrit un fichier
+write_file(chemin, contenu)  # Écrit un fichier. Utilisez des guillemets triples avec de vrais sauts de ligne. Ne jamais échapper avec \n !
 args()                    # Arguments CLI → List
 input(nom)                # Entrée HTTP/input
+```
+
+Note importante pour `write_file` :
+Pour écrire des fichiers sur plusieurs lignes, utilisez des guillemets triples avec de vrais retours à la ligne littéraux (sauts de ligne physiques). **N'écrivez JAMAIS la séquence de caractères `\n` dans la chaîne**, car elle serait écrite littéralement `\n` dans le fichier, provoquant des erreurs de syntaxe.
+
+Exemple CORRECT :
+```pll
+write_file("app.js", """
+console.log("ligne 1");
+console.log("ligne 2");
+""")
+```
+
+Exemple INCORRECT :
+```pll
+write_file("app.js", "console.log(\"ligne 1\");\nconsole.log(\"ligne 2\");")
 ```
 
 ### 1.11 Communication agent (wire)

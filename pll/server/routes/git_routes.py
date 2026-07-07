@@ -56,6 +56,7 @@ class GitStatusResponse(BaseModel):
     modified: list[str] = []
     untracked: list[str] = []
     deleted: list[str] = []
+    ahead_files: list[str] = []
     commit_count: int = 0
 
 
@@ -132,6 +133,7 @@ async def git_status(project_id: int, db: AsyncSession = Depends(get_db)):
 
     # Count ahead/behind
     ahead = behind = 0
+    ahead_files = []
     remote = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}", cwd=git_dir)
     if remote["ok"]:
         rev = _git("rev-list", "--left-right", "--count", "HEAD...@{upstream}", cwd=git_dir)
@@ -139,6 +141,10 @@ async def git_status(project_id: int, db: AsyncSession = Depends(get_db)):
             parts = rev["out"].split()
             if len(parts) == 2:
                 ahead, behind = int(parts[0]), int(parts[1])
+        if ahead > 0:
+            diff_files = _git("diff", "--name-only", "@{upstream}...HEAD", cwd=git_dir)
+            if diff_files["ok"]:
+                ahead_files = [f.strip() for f in diff_files["out"].split("\n") if f.strip()]
 
     return GitStatusResponse(
         branch=branch_name,
@@ -149,6 +155,7 @@ async def git_status(project_id: int, db: AsyncSession = Depends(get_db)):
         modified=modified,
         untracked=untracked,
         deleted=deleted,
+        ahead_files=ahead_files,
         commit_count=int(commit_count.get("out", "0") or "0"),
     )
 
@@ -170,6 +177,35 @@ async def git_log(project_id: int, max_count: int = Query(10, le=50), db: AsyncS
                 hash=parts[0][:8], author=parts[1], date=parts[2], message=parts[3],
             ))
     return entries
+
+
+class GitDiffResponse(BaseModel):
+    diff: str = ""
+    is_repo: bool = False
+    branch: str = ""
+
+
+@router.get("/{project_id}/diff", response_model=GitDiffResponse)
+async def git_diff(project_id: int, staged: bool = Query(False), db: AsyncSession = Depends(get_db)):
+    """Get git diff. If staged=true, show staged changes only."""
+    project = await db.get(Project, project_id)
+    if not project:
+        return GitDiffResponse()
+    git_dir = _git_dir(project)
+    if not (git_dir / ".git").exists():
+        return GitDiffResponse(is_repo=False)
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD", cwd=git_dir)
+    branch_name = branch.get("out", "") if branch["ok"] else "main"
+
+    cmd = ["diff", "--cached"] if staged else ["diff"]
+    r = _git(*cmd, cwd=git_dir)
+    if not r["ok"]:
+        return GitDiffResponse(is_repo=True, branch=branch_name)
+    return GitDiffResponse(
+        diff=r["out"],
+        is_repo=True,
+        branch=branch_name,
+    )
 
 
 @router.post("/{project_id}/commit")
@@ -261,3 +297,18 @@ async def git_clone_repo(project_id: int, req: GitRemoteRequest, db: AsyncSessio
     if not r["ok"]:
         raise HTTPException(400, r["err"])
     return {"ok": True, "out": f"Cloned {req.url}"}
+
+
+@router.get("/{project_id}/show")
+async def git_show_file(project_id: int, path: str = Query(...), db: AsyncSession = Depends(get_db)):
+    """Get the version of a file from git HEAD."""
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    git_dir = _git_dir(project)
+    if not (git_dir / ".git").exists():
+        raise HTTPException(400, "Not a git repository")
+    r = _git("show", f"HEAD:{path}", cwd=git_dir)
+    if not r["ok"]:
+        return {"content": ""}
+    return {"content": r["out"]}

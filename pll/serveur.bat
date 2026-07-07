@@ -4,12 +4,13 @@ title PLL Server - Agentic IDE
 setlocal enabledelayedexpansion
 
 set SERVER_DIR=%~dp0server
+set PLL_DIR=%~dp0
 set PORT=8080
 set HOST=127.0.0.1
 
 echo.
 echo === PLL Agentic IDE Server ===
-echo FastAPI + Monaco + DeepSeek + GCA
+echo FastAPI + Monaco + DeepSeek + PLL VM
 echo.
 
 :: Navigate to server dir
@@ -18,6 +19,18 @@ if %ERRORLEVEL% neq 0 (
     echo [ERR] Dossier introuvable: %SERVER_DIR%
     pause
     exit /b 1
+)
+
+:: Create .env from example if missing
+if not exist ".env" (
+    if exist "example.env" (
+        echo [..] Creation .env depuis example.env...
+        copy example.env .env >nul
+        echo [!!] EDITE .env pour ajouter ta cle Dp_API_KEY
+        echo [!!] Ou laisse vide pour utiliser LM Studio en local
+    ) else (
+        echo [!!] Aucun fichier .env ou example.env trouve
+    )
 )
 
 :: Load .env if present
@@ -72,6 +85,28 @@ if "%Dp_API_KEY%"=="" (
     echo      Definis Dp_API_KEY ou copie example.env en .env
 ) else (
     echo [OK]  DeepSeek API cle trouvee
+)
+
+:: Build PLL CLI if missing
+set PLL_BINARY=%PLL_DIR%target\release\pll-cli.exe
+if not exist "%PLL_BINARY%" (
+    echo [..] Compilation de la VM PLL ^(premiere fois, ~2min^)...
+    where cargo >nul 2>nul
+    if %ERRORLEVEL% equ 0 (
+        cd /d "%PLL_DIR%"
+        cargo build --release -p pll-cli >nul 2>nul
+        if %ERRORLEVEL% neq 0 (
+            echo [!!] Echec compilation PLL. Certaines fonctions PLL seront indisponibles.
+        ) else (
+            echo [OK]  VM PLL compilee
+        )
+        cd /d "%SERVER_DIR%"
+    ) else (
+        echo [!!] Rust/Cargo introuvable. Installe Rust depuis https://rustup.rs
+        echo      Les fonctions PLL avancees seront indisponibles.
+    )
+) else (
+    echo [OK]  VM PLL prete
 )
 
 :: Check LM Studio

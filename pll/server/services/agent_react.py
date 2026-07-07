@@ -85,7 +85,17 @@ def parse_pll_call(call_str: str) -> dict | None:
                     args_list.append(arg.n)
                 else:
                     args_list.append(ast.unparse(arg) if hasattr(ast, 'unparse') else str(arg))
-            return {"tool": tool_name, "args_list": args_list}
+            kwargs_dict = {}
+            for kw in getattr(call_node, 'keywords', []):
+                if isinstance(kw.value, ast.Constant):
+                    kwargs_dict[kw.arg] = kw.value.value
+                elif isinstance(kw.value, ast.Str):
+                    kwargs_dict[kw.arg] = kw.value.s
+                elif isinstance(kw.value, ast.Num):
+                    kwargs_dict[kw.arg] = kw.value.n
+                else:
+                    kwargs_dict[kw.arg] = ast.unparse(kw.value) if hasattr(ast, 'unparse') else str(kw.value)
+            return {"tool": tool_name, "args_list": args_list, "kwargs": kwargs_dict}
     except Exception:
         if call_str_clean.startswith("write_file"):
             parsed = parse_write_file_fallback(call_str_clean)
@@ -93,11 +103,13 @@ def parse_pll_call(call_str: str) -> dict | None:
                 return parsed
         return None
 
-def map_args(tool: str, args_list: list) -> dict:
+def map_args(tool: str, args_list: list, kwargs: dict = None) -> dict:
+    kwargs = kwargs or {}
     args = {}
     if tool == "write_file":
         if len(args_list) >= 1: args["path"] = args_list[0]
         if len(args_list) >= 2: args["content"] = args_list[1]
+        args.update(kwargs)
     elif tool in ("read_file", "delete_file", "list_dir", "probe_path", "list_symbols"):
         if len(args_list) >= 1: args["path"] = args_list[0]
     elif tool == "glob_files":
@@ -130,6 +142,8 @@ def map_args(tool: str, args_list: list) -> dict:
         if len(args_list) >= 1: args["prompt"] = args_list[0]
     elif tool in ("run_pll", "exec_pll"):
         if len(args_list) >= 1: args["code"] = args_list[0]
+    elif tool == "compile_pll":
+        if len(args_list) >= 1: args["path"] = args_list[0]
     return args
 
 TOOL_DESCRIPTIONS = f"""
@@ -138,8 +152,13 @@ TOOL_DESCRIPTIONS = f"""
 ## Tools
 
 ### write_file(path, content)
-Create or overwrite a file with full content. Use triple quotes for multi-line content.
-write_file("src/app/page.tsx", "content...")
+Create or overwrite a file with full content. Use triple quotes with actual, literal multi-line linebreaks.
+CRITICAL: Do NOT write literal '\n' characters inside the content string! Write actual newlines directly inside the triple quotes instead.
+Example of BAD (writes literal \n):
+write_file("test.txt", "line1\nline2")
+Example of GOOD (writes actual newlines):
+write_file("test.txt", '''line1
+line2''')
 
 ### read_file(path)
 Read a file from the project.
@@ -179,6 +198,7 @@ web_search("query...")
 
 ### replace_content(path, target, replacement)
 Replace a UNIQUE occurrence of target with replacement in a file. Very useful to edit files without rewriting them entirely.
+CRITICAL: Do NOT write literal '\n' characters inside target or replacement strings! Write actual, literal newlines inside triple quotes instead.
 replace_content("path/to/file.py", "def old_func():", "def new_func():")
 
 ### start_task(cmd)
@@ -209,10 +229,18 @@ ask_expert("Why does this test fail? [code snippet]")
 Compile and execute a snippet of PLL code locally. Use this to do deterministic mathematical calculations or logical validations. Returns output stdout and stderr.
 run_pll("v a != 5\nrender str_from_num(a)")
 
+### exec_pll(code)
+Execute PLL code for data transforms (math, strings, lists). Does NOT touch real files.
+exec_pll('''v x != 2 + 2\nrender str_from_num(x)''')
+
 ### final_answer(text)
 Call this when the task is complete.
 final_answer("Done.")
 """
+
+
+# Globally store pending command approvals: session_id -> { "event": asyncio.Event, "approved": bool, "cmd": str }
+PENDING_APPROVALS: dict[int, dict] = {}
 
 
 class AgentReAct:
@@ -225,6 +253,8 @@ class AgentReAct:
         self.history = []
         self._tool_cache = {}
         self._allowed_dir = None
+        self.session_id = None
+        self._step_callback = None
 
         from database import async_session
         self._session_factory = async_session
@@ -429,7 +459,8 @@ class AgentReAct:
             "write_file", "read_file", "delete_file", "list_dir", "glob_files", 
             "grep_files", "exec_shell", "probe_path", "web_fetch", "web_search", 
             "final_answer", "rename_file", "zip_project", "replace_content",
-            "start_task", "get_task_status", "kill_task", "list_tasks", "list_symbols", "ask_expert"
+            "start_task", "get_task_status", "kill_task", "list_tasks", "list_symbols", "ask_expert",
+            "exec_pll", "run_pll"
         }
 
         # 0. Try parsing native PLL blocks in markdown format first
@@ -443,7 +474,7 @@ class AgentReAct:
             for c in raw_calls:
                 t_name = c["tool"]
                 if t_name in known_tools:
-                    mapped_args = map_args(t_name, c["args_list"])
+                    mapped_args = map_args(t_name, c["args_list"], c.get("kwargs"))
                     calls.append({"tool": t_name, "args": mapped_args})
         
         if calls:
@@ -581,7 +612,7 @@ class AgentReAct:
                 call_candidate = text[found_pos:pos]
                 parsed = parse_pll_call(call_candidate)
                 if parsed and parsed["tool"] in known_tools:
-                    mapped_args = map_args(parsed["tool"], parsed["args_list"])
+                    mapped_args = map_args(parsed["tool"], parsed["args_list"], parsed.get("kwargs"))
                     calls.append({"tool": parsed["tool"], "args": mapped_args})
                 i = pos
             else:
@@ -1150,17 +1181,76 @@ class AgentReAct:
         cmd = args.get("cmd", "")
         if not cmd:
             return "ERROR: No command provided"
+        
+        # HITL Security Check
+        if getattr(self, "session_id", None) is not None:
+            event = asyncio.Event()
+            PENDING_APPROVALS[self.session_id] = {
+                "event": event,
+                "approved": False,
+                "cmd": cmd
+            }
+            
+            # Request approval via step_callback if present
+            if self._step_callback:
+                await self._step_callback(
+                    [],
+                    {
+                        "tool": "exec_shell",
+                        "args": {"cmd": cmd},
+                        "status": "pending_approval",
+                        "session_id": self.session_id
+                    },
+                    0, 0
+                )
+            
+            # Wait until user sets the event
+            await event.wait()
+            
+            info = PENDING_APPROVALS.pop(self.session_id, None)
+            if not info or not info.get("approved"):
+                return "ERROR: Command execution was rejected by the user."
+
         import subprocess
+        import tempfile
+        import uuid
+        from pathlib import Path
+        
         allowed = await self._project_dir()
         cwd = str(allowed) if allowed else None
+        
+        temp_dir = Path(tempfile.gettempdir())
+        temp_id = uuid.uuid4().hex[:8]
+        out_path = temp_dir / f".exec_out_{temp_id}.tmp"
+        err_path = temp_dir / f".exec_err_{temp_id}.tmp"
+        
         try:
-            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, cwd=cwd)
-            out = r.stdout.strip()[:3000]
-            err = r.stderr.strip()[:500]
+            with open(out_path, "wb") as f_out, open(err_path, "wb") as f_err:
+                r = subprocess.run(cmd, shell=True, stdout=f_out, stderr=f_err, timeout=30, cwd=cwd)
+            out_bytes = out_path.read_bytes() if out_path.is_file() else b""
+            err_bytes = err_path.read_bytes() if err_path.is_file() else b""
+            
+            # Clean up
+            for path in (out_path, err_path):
+                try:
+                    if path.is_file():
+                        path.unlink()
+                except Exception:
+                    pass
+            
+            out = out_bytes.decode("utf-8", errors="replace").strip()[:3000]
+            err = err_bytes.decode("utf-8", errors="replace").strip()[:500]
+            
             if r.returncode != 0 and not out:
                 return f"Shell error (code {r.returncode}): {err}"
             return out or "(no output)"
         except subprocess.TimeoutExpired:
+            for path in (out_path, err_path):
+                try:
+                    if path.is_file():
+                        path.unlink()
+                except Exception:
+                    pass
             return "ERROR: Command timed out (30s)"
         except Exception as e:
             return f"ERROR: {e}"
@@ -1562,6 +1652,7 @@ class AgentReAct:
 
     async def run(self, user_message: str, context: str = "", step_callback=None) -> dict:
         """ReAct loop. step_callback(steps_list, step_info, current_step, max_steps) is called after each tool execution for SSE."""
+        self._step_callback = step_callback
         system = (
             "You are an AI coding assistant that thinks and acts in PLL.\n\n"
             "PLL is for planning AND action — call tools using function syntax: list_dir(\"path\").\n"
@@ -1596,7 +1687,8 @@ class AgentReAct:
                 "write_file", "read_file", "delete_file", "list_dir", "glob_files", 
                 "grep_files", "exec_shell", "probe_path", "web_fetch", "web_search", 
                 "final_answer", "rename_file", "zip_project", "replace_content",
-                "start_task", "get_task_status", "kill_task", "list_tasks", "list_symbols", "ask_expert"
+                "start_task", "get_task_status", "kill_task", "list_tasks", "list_symbols", "ask_expert",
+                "exec_pll", "run_pll"
             }
             for tool in known_tools:
                 pos = text_before_call.find(tool + "(")

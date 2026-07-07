@@ -23,45 +23,81 @@
                     <button id="btn-new-project" class="btn btn-sm btn-secondary" title="Nouveau projet">+</button>
                     <button id="btn-delete-project" class="btn btn-sm btn-danger" style="display:none">🗑</button>
                     <button id="btn-settings" class="btn btn-sm btn-secondary" title="Paramètres">⚙️ Paramètres</button>
+                    <select id="layout-select" class="project-select" style="margin-left: 8px; background: var(--bg-dark); color: var(--fg-light); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px; font-size: 13px;" title="Disposition">
+                        <option value="right">Console à droite</option>
+                        <option value="bottom">Console en bas</option>
+                    </select>
+                    <button id="btn-toggle-sidebar" class="btn btn-sm btn-secondary" style="margin-left: 4px;" title="Afficher/Masquer le panneau latéral">📁</button>
                 </div>
             </div>
         </header>
         <main class="workspace">
-            <aside class="pane sidebar-pane" id="sidebar-files">
-                <div class="pane-header">
-                    <div class="sidebar-title">📂 Projet & Fichiers</div>
-                    <button id="btn-add-file" class="btn btn-sm btn-secondary" title="Nouveau fichier">+</button>
+            <aside class="pane sidebar-pane" id="sidebar-files" style="width: 250px;">
+                <div class="pane-header" style="padding: 4px 8px;">
+                    <div class="sidebar-tabs" style="display: flex; gap: 8px;">
+                        <button class="sidebar-tab-btn active" id="tab-btn-vfs" style="background: none; border: none; color: var(--text-primary); cursor: pointer; font-size: 13px; font-weight: bold; border-bottom: 2px solid var(--accent-color); padding: 4px 0;">📂 Fichiers</button>
+                        <button class="sidebar-tab-btn" id="tab-btn-sessions" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; font-weight: bold; padding: 4px 0;">🕒 Sessions</button>
+                    </div>
+                    <button id="btn-add-file" class="btn btn-sm btn-secondary" style="margin-left: auto;" title="Nouveau fichier">+</button>
                 </div>
-                <div class="vfs-manager">
-                    <div class="vfs-list" id="vfs-files-list"></div>
+                <div class="vfs-manager sidebar-content-item" id="sidebar-content-vfs" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                    <!-- Accordion 1: Files explorer -->
+                    <div class="sidebar-section active" id="sec-explorer" style="display: flex; flex-direction: column;">
+                        <div class="sidebar-section-header" id="sec-header-explorer" style="display: flex; align-items: center; padding: 6px 8px; background: rgba(0,0,0,0.15); border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none;">
+                            <span class="sec-caret" style="margin-right: 6px; font-size: 8px; transition: transform 0.15s; transform: rotate(90deg);">▶</span>
+                            <span style="font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">EXPLORATEUR</span>
+                        </div>
+                        <div class="sidebar-section-content" id="sec-content-explorer" style="overflow-y: auto; display: block; max-height: 400px; padding: 4px;">
+                            <div class="vfs-list" id="vfs-files-list"></div>
+                        </div>
+                    </div>
+                    <!-- Accordion 2: Git Source Control -->
+                    <div class="sidebar-section active" id="sec-git" style="display: flex; flex-direction: column; border-top: 1px solid var(--border-color); flex: 1;">
+                        <div class="sidebar-section-header" id="sec-header-git" style="display: flex; align-items: center; padding: 6px 8px; background: rgba(0,0,0,0.15); border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none;">
+                            <span class="sec-caret" style="margin-right: 6px; font-size: 8px; transition: transform 0.15s; transform: rotate(90deg);">▶</span>
+                            <span style="font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">CONTRÔLE DE SOURCE</span>
+                        </div>
+                        <div class="sidebar-section-content" id="sec-content-git" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 8px;">
+                            <div id="sidebar-git-list" style="flex: 1; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; min-height: 100px; margin-bottom: 8px;"></div>
+                            <div class="git-commit-bar-sidebar" style="display: flex; flex-direction: column; gap: 6px; margin-top: auto;">
+                                <input type="text" id="git-commit-msg-sidebar" placeholder="Message de commit (Agent si vide)..." style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); padding: 6px 8px; border-radius: var(--radius-sm); color: var(--text-primary); font-size: 11px; outline: none; width: 100%;">
+                                <button id="git-btn-commit-sidebar" class="btn btn-sm btn-primary" style="width: 100%; font-size: 11px; padding: 6px;">💾 Commit</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="sessions-manager sidebar-content-item" id="sidebar-content-sessions" style="flex: 1; display: none; flex-direction: column; overflow: hidden; padding: 8px;">
+                    <button id="btn-sidebar-new-session" class="btn btn-primary btn-sm" style="width: 100%; margin-bottom: 8px;">+ Nouvelle Session</button>
+                    <div id="sidebar-sessions-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;"></div>
                 </div>
             </aside>
             <div class="resize-handle" id="resize-handle-left"></div>
             
-            <section class="pane editor-pane">
-                <div class="pane-header">
-                    <div class="editor-tabs-bar" id="editor-tabs-bar"></div>
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <div class="editor-status" id="typecheck-status">
-                            <span class="status-indicator success"></span> Prêt
+            <div class="editor-results-container" id="editor-results-container" style="display: flex; flex: 1; flex-direction: row; min-width: 0; height: 100%;">
+                <section class="pane editor-pane" style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+                    <div class="pane-header">
+                        <div class="editor-tabs-bar" id="editor-tabs-bar"></div>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div class="editor-status" id="typecheck-status">
+                                <span class="status-indicator success"></span> Prêt
+                            </div>
+                            <button id="btn-save-file" class="btn btn-sm btn-secondary" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px;" title="Sauvegarder le fichier actuel (Ctrl+S)">
+                                💾 Enregistrer
+                            </button>
+                            <button id="btn-run-code" class="btn btn-sm btn-primary" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px;" title="Exécuter le fichier PLL actuel">
+                                ▶ Exécuter
+                            </button>
                         </div>
-                        <button id="btn-save-file" class="btn btn-sm btn-secondary" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px;" title="Sauvegarder le fichier actuel (Ctrl+S)">
-                            💾 Enregistrer
-                        </button>
-                        <button id="btn-run-code" class="btn btn-sm btn-primary" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px;" title="Exécuter le fichier PLL actuel">
-                            ▶ Exécuter
-                        </button>
                     </div>
-                </div>
-                <div class="editor-container">
-                    <div id="monaco-editor"></div>
-                </div>
-                <div class="editor-lang-badge" id="editor-lang-badge">python</div>
-            </section>
-            
-            <div class="resize-handle" id="resize-handle"></div>
-            
-            <section class="pane results-pane">
+                    <div class="editor-container" style="flex: 1; position: relative;">
+                        <div id="monaco-editor" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;"></div>
+                    </div>
+                    <div class="editor-lang-badge" id="editor-lang-badge">python</div>
+                </section>
+                
+                <div class="resize-handle" id="resize-handle"></div>
+                
+                <section class="pane results-pane" style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
                 <div class="pane-header">
                     <div class="tabs-list">
                         <button class="tab-btn active" data-tab="tab-agentic">Agent 🤖</button>
@@ -73,13 +109,14 @@
                 </div>
                 <div class="tab-content active" id="tab-agentic">
                     <div class="agentic-panel">
-                        <div class="agentic-header">
+                        <div class="agentic-header" style="flex-wrap: wrap;">
                             <h3>Agent de Développement 🤖</h3>
                             <div class="agentic-controls" style="display: flex; gap: 8px; align-items: center;">
-                                <select id="agentic-session-select" class="btn btn-sm btn-secondary" style="background: var(--bg-dark); color: var(--fg-light); border: 1px solid var(--border-color); cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 13px; max-width: 250px;">
+                                <div id="agentic-tabs" class="agentic-tabs" style="display: flex; gap: 2px; overflow-x: auto; max-width: 300px;"></div>
+                                <button id="btn-agentic-new-tab" class="btn btn-sm btn-secondary" title="Nouvel onglet">➕</button>
+                                <select id="agentic-session-select" class="btn btn-sm btn-secondary" style="display:none;background: var(--bg-dark); color: var(--fg-light); border: 1px solid var(--border-color); cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 13px; max-width: 250px;">
                                     <option value="">-- Aucune session --</option>
                                 </select>
-                                <button id="btn-agentic-new-session" class="btn btn-sm btn-secondary" title="Nouvelle Session">➕ Session</button>
                                 <button id="btn-agentic-clear" class="btn btn-sm btn-secondary">Effacer</button>
                             </div>
                         </div>
@@ -89,11 +126,16 @@
                         <div class="agentic-input-bar">
                             <textarea id="agentic-input" rows="4" placeholder="Ex: Ajoute un bouton pause au jeu de snake..."></textarea>
                             <button id="btn-agentic-send" class="btn btn-primary">Envoyer</button>
+                            <button id="btn-agentic-stop" class="btn btn-sm btn-danger" style="display:none" title="Arrêter l'agent">⬛ Stop</button>
                         </div>
                     </div>
                 </div>
                 <div class="tab-content" id="tab-terminal">
                     <div class="terminal-panel">
+                        <div class="terminal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.15);">
+                            <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">CONSOLE & SHELL</span>
+                            <button id="btn-terminal-clear" class="btn btn-sm btn-secondary" style="padding: 2px 8px; font-size: 10px;" title="Effacer la console">🗑️</button>
+                        </div>
                         <div class="terminal-output" id="terminal-log">
                             <div class="sys-msg">Console PLL prête. Tapez une commande ci-dessous.</div>
                         </div>
@@ -135,13 +177,15 @@
                         <div class="conv-list" id="conv-list"></div>
                     </div>
                 </div>
-            </section>
+                </div>
+            </div>
         </main>
         <div id="git-status-bar" title="Cliquer pour debug">
             <span id="git-branch">⎇ —</span>
             <span id="git-changes"></span>
             <span id="git-remote"></span>
-            <span id="git-debug" style="display:none;font-size:10px;color:var(--text-muted);margin-left:auto"></span>
+            <button id="git-diff-btn" class="btn btn-sm btn-secondary" title="Voir le diff" style="margin-left:auto;font-size:10px;padding:2px 6px;">📊 Diff</button>
+            <span id="git-debug" style="display:none;font-size:10px;color:var(--text-muted);"></span>
         </div>
     </div>
     <div class="modal" id="vfs-modal">
@@ -215,6 +259,26 @@
             <div class="modal-actions">
                 <button id="project-modal-cancel" class="btn btn-secondary">Annuler</button>
                 <button id="project-modal-save" class="btn btn-primary">Créer</button>
+            </div>
+        </div>
+    </div>
+    <div class="modal" id="diff-modal">
+        <div class="modal-content" style="max-width: 950px; width: 90vw; max-height: 85vh; display: flex; flex-direction: column;">
+            <h2 style="display: flex; justify-content: space-between; align-items: center; margin-top: 0;">
+                <span>📊 Git Diff</span>
+                <span id="diff-badge" style="font-size: 12px; color: var(--text-muted);"></span>
+            </h2>
+            <div class="diff-actions" style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center;">
+                <button id="diff-btn-all" class="btn btn-sm btn-secondary">Tout</button>
+                <button id="diff-btn-staged" class="btn btn-sm btn-secondary">Staged</button>
+                <select id="diff-files-dropdown" style="background: var(--bg-dark); color: var(--fg-light); border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 4px; font-size: 13px; outline: none; display: none; max-width: 300px;"></select>
+                <button id="diff-btn-close" class="btn btn-sm btn-secondary" style="margin-left: auto;">Fermer</button>
+            </div>
+            <div id="monaco-diff-container" style="flex: 1; min-height: 380px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; display: none; margin-bottom: 12px;"></div>
+            <pre id="diff-content" style="flex: 1; overflow: auto; background: rgba(0,0,0,0.3); padding: 12px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; margin: 0;"></pre>
+            <div class="git-commit-bar" style="display: flex; gap: 8px; margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 12px; align-items: center;">
+                <input type="text" id="git-commit-msg" placeholder="Message de commit (laisser vide pour générer par l'Agent)..." style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px; outline: none;">
+                <button id="git-btn-commit" class="btn btn-primary" style="padding: 8px 16px;">💾 Commit</button>
             </div>
         </div>
     </div>
