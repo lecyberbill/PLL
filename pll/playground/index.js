@@ -859,6 +859,7 @@ async function refreshGitStatus() {
 }
 
 async function loadConversations() {
+    if (!elConvList) return;
     if (!currentProjectId) { elConvList.innerHTML = '<div class="sys-msg">Aucun projet sélectionné</div>'; return; }
     try {
         const msgs = await api(`/api/projects/${currentProjectId}/conversations?limit=100`);
