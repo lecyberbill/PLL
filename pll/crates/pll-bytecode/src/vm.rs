@@ -43,6 +43,12 @@ fn decode_i16(code: &[u8], ip: &mut usize) -> i16 {
     val
 }
 
+fn decode_u16(code: &[u8], ip: &mut usize) -> u16 {
+    let val = u16::from_le_bytes([code[*ip], code[*ip + 1]]);
+    *ip += 2;
+    val
+}
+
 #[derive(Debug, Clone)]
 pub enum BcValue {
     Num(f64), Str(String), Bool(bool),
@@ -73,15 +79,16 @@ pub struct BcEnv {
     code: Vec<u8>,
     ip: usize,
     pub stack: Vec<BcValue>,
-    pub vars: HashMap<String, BcValue>,
+    pub vars: Vec<BcValue>,
+    bp: usize,
     fns: Vec<FnInfo>,
-    call_stack: Vec<(usize, String, HashMap<String, BcValue>)>,
+    call_stack: Vec<(usize, String, usize)>,
     running: bool,
 }
 
 impl BcEnv {
     pub fn new(code: Vec<u8>) -> Self {
-        Self { code, ip: 0, stack: Vec::new(), vars: HashMap::new(), fns: Vec::new(), call_stack: Vec::new(), running: true }
+        Self { code, ip: 0, stack: Vec::new(), vars: Vec::new(), bp: 0, fns: Vec::new(), call_stack: Vec::new(), running: true }
     }
 
     fn push(&mut self, val: BcValue) { self.stack.push(val); }
@@ -144,8 +151,35 @@ impl BcEnv {
                 Some(Opcode::And) => { let b = self.pop().truthy(); let a = self.pop().truthy(); self.push(BcValue::Bool(a && b)); }
                 Some(Opcode::Or) => { let b = self.pop().truthy(); let a = self.pop().truthy(); self.push(BcValue::Bool(a || b)); }
                 Some(Opcode::Not) => { let v = self.pop().truthy(); self.push(BcValue::Bool(!v)); }
-                Some(Opcode::LoadVar) => { let name = decode_str(&self.code, &mut self.ip).to_string(); self.push(self.vars.get(&name).cloned().unwrap_or(BcValue::Nil)); }
-                Some(Opcode::StoreVar) => { let name = decode_str(&self.code, &mut self.ip).to_string(); let val = self.pop(); self.vars.insert(name, val); }
+                Some(Opcode::LoadVar) => { return Err(self.err("String-based variables are deprecated")); }
+                Some(Opcode::StoreVar) => { return Err(self.err("String-based variables are deprecated")); }
+                Some(Opcode::LoadVarSlot) => {
+                    let idx = decode_u16(&self.code, &mut self.ip) as usize;
+                    let val = self.vars.get(self.bp + idx).cloned().unwrap_or(BcValue::Nil);
+                    self.push(val);
+                }
+                Some(Opcode::StoreVarSlot) => {
+                    let idx = decode_u16(&self.code, &mut self.ip) as usize;
+                    let val = self.pop();
+                    let target_idx = self.bp + idx;
+                    if target_idx >= self.vars.len() {
+                        self.vars.resize(target_idx + 1, BcValue::Nil);
+                    }
+                    self.vars[target_idx] = val;
+                }
+                Some(Opcode::LoadGlobalSlot) => {
+                    let idx = decode_u16(&self.code, &mut self.ip) as usize;
+                    let val = self.vars.get(idx).cloned().unwrap_or(BcValue::Nil);
+                    self.push(val);
+                }
+                Some(Opcode::StoreGlobalSlot) => {
+                    let idx = decode_u16(&self.code, &mut self.ip) as usize;
+                    let val = self.pop();
+                    if idx >= self.vars.len() {
+                        self.vars.resize(idx + 1, BcValue::Nil);
+                    }
+                    self.vars[idx] = val;
+                }
                 Some(Opcode::Jmp) => { let offset = decode_i16(&self.code, &mut self.ip); self.ip = ((self.ip as i64) + (offset as i64)) as usize; }
                 Some(Opcode::Jif) => { let offset = decode_i16(&self.code, &mut self.ip); if !self.pop().truthy() { self.ip = ((self.ip as i64) + (offset as i64)) as usize; } }
                 Some(Opcode::Call) => {
@@ -154,16 +188,18 @@ impl BcEnv {
                     if fn_idx >= self.fns.len() { for _ in 0..argc { self.pop(); } self.push(BcValue::Nil); }
                     else {
                         let fn_info = self.fns[fn_idx].clone();
-                        let saved = self.vars.clone();
                         let fn_name = fn_info.name.clone();
-                        self.call_stack.push((self.ip, fn_name, saved));
+                        let new_bp = self.vars.len();
+                        self.call_stack.push((self.ip, fn_name, self.bp));
+                        self.bp = new_bp;
                         self.ip = fn_info.address;
                     }
                 }
                 Some(Opcode::Ret) => {
                     let ret_val = self.pop();
-                    if let Some((ip, _name, saved)) = self.call_stack.pop() {
-                        self.vars = saved;
+                    if let Some((ip, _name, saved_bp)) = self.call_stack.pop() {
+                        self.vars.truncate(self.bp);
+                        self.bp = saved_bp;
                         self.ip = ip;
                         self.push(ret_val);
                     } else {
@@ -223,6 +259,8 @@ impl Opcode {
             20 => Some(Opcode::Eq), 21 => Some(Opcode::Neq), 22 => Some(Opcode::Gt), 23 => Some(Opcode::Lt),
             24 => Some(Opcode::Gte), 25 => Some(Opcode::Lte), 26 => Some(Opcode::And), 27 => Some(Opcode::Or), 28 => Some(Opcode::Not),
             30 => Some(Opcode::LoadVar), 31 => Some(Opcode::StoreVar),
+            32 => Some(Opcode::LoadVarSlot), 33 => Some(Opcode::StoreVarSlot),
+            34 => Some(Opcode::LoadGlobalSlot), 35 => Some(Opcode::StoreGlobalSlot),
             40 => Some(Opcode::Jmp), 41 => Some(Opcode::Jif),
             50 => Some(Opcode::Call), 51 => Some(Opcode::Ret),
             60 => Some(Opcode::Builtin),

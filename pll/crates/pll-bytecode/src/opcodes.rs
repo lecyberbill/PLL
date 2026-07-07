@@ -7,6 +7,8 @@ pub enum Opcode {
     Eq = 20, Neq = 21, Gt = 22, Lt = 23, Gte = 24, Lte = 25,
     And = 26, Or = 27, Not = 28,
     LoadVar = 30, StoreVar = 31,
+    LoadVarSlot = 32, StoreVarSlot = 33,
+    LoadGlobalSlot = 34, StoreGlobalSlot = 35,
     Jmp = 40, Jif = 41,
     Call = 50, Ret = 51,
     Builtin = 60,

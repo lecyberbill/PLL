@@ -6,6 +6,8 @@ pub struct Compiler {
     bytecode: Vec<u8>,
     fns: Vec<FnInfo>,
     vars: std::collections::HashMap<String, u16>,
+    globals: std::collections::HashMap<String, u16>,
+    is_compiling_fn: bool,
 }
 
 #[derive(Clone)]
@@ -17,7 +19,13 @@ pub struct FnInfo {
 
 impl Compiler {
     pub fn new() -> Self {
-        Self { bytecode: Vec::new(), fns: Vec::new(), vars: std::collections::HashMap::new() }
+        Self {
+            bytecode: Vec::new(),
+            fns: Vec::new(),
+            vars: std::collections::HashMap::new(),
+            globals: std::collections::HashMap::new(),
+            is_compiling_fn: false,
+        }
     }
 
     pub fn compile_program(&mut self, program: &Program) {
@@ -33,6 +41,7 @@ impl Compiler {
             });
         }
         self.bytecode.extend_from_slice(&[0; 4]);
+        self.is_compiling_fn = false;
         for stmt in &program.statements {
             match &stmt.value { Stmt::FnDecl(_) => {} _ => self.compile_stmt(stmt), }
         }
@@ -48,13 +57,18 @@ impl Compiler {
             self.bytecode.push(name_bytes.len() as u8);
             self.bytecode.extend_from_slice(name_bytes);
         }
+        self.is_compiling_fn = true;
         let mut fn_addrs = Vec::new();
         for (i, f) in fn_decls.iter().enumerate() {
             let addr = self.bytecode.len();
             fn_addrs.push(addr);
             self.fns[i].address = addr;
             self.vars.clear();
-            for p in &f.params { self.emit_store_var(&p.name); self.vars.insert(p.name.clone(), 0); }
+            for p in &f.params {
+                let idx = self.vars.len() as u16;
+                self.vars.insert(p.name.clone(), idx);
+                self.emit_store_var(&p.name);
+            }
             for s in &f.body { self.compile_stmt(s); }
             self.bytecode.push(Opcode::Ret as u8);
         }
@@ -70,8 +84,13 @@ impl Compiler {
         match &stmt.value {
             Stmt::VarDecl(v) => {
                 if let Some(init) = &v.init { self.compile_expr(init); } else { self.bytecode.push(Opcode::PushNil as u8); }
-                let idx = self.vars.len() as u16;
-                self.vars.insert(v.name.clone(), idx);
+                if self.is_compiling_fn {
+                    let idx = self.vars.len() as u16;
+                    self.vars.insert(v.name.clone(), idx);
+                } else {
+                    let idx = self.globals.len() as u16;
+                    self.globals.insert(v.name.clone(), idx);
+                }
                 self.emit_store_var(&v.name);
             }
             Stmt::Assign { name, value } => { self.compile_expr(value); self.emit_store_var(name); }
@@ -238,17 +257,55 @@ impl Compiler {
     }
 
     fn emit_load_var(&mut self, name: &str) {
-        self.bytecode.push(Opcode::LoadVar as u8);
-        let bytes = name.as_bytes();
-        self.bytecode.push(bytes.len() as u8);
-        self.bytecode.extend_from_slice(bytes);
+        if self.is_compiling_fn {
+            if let Some(&idx) = self.vars.get(name) {
+                self.bytecode.push(Opcode::LoadVarSlot as u8);
+                self.bytecode.extend_from_slice(&idx.to_le_bytes());
+                return;
+            }
+        }
+        if let Some(&idx) = self.globals.get(name) {
+            self.bytecode.push(Opcode::LoadGlobalSlot as u8);
+            self.bytecode.extend_from_slice(&idx.to_le_bytes());
+            return;
+        }
+        if self.is_compiling_fn {
+            let idx = self.vars.len() as u16;
+            self.vars.insert(name.to_string(), idx);
+            self.bytecode.push(Opcode::LoadVarSlot as u8);
+            self.bytecode.extend_from_slice(&idx.to_le_bytes());
+        } else {
+            let idx = self.globals.len() as u16;
+            self.globals.insert(name.to_string(), idx);
+            self.bytecode.push(Opcode::LoadGlobalSlot as u8);
+            self.bytecode.extend_from_slice(&idx.to_le_bytes());
+        }
     }
 
     fn emit_store_var(&mut self, name: &str) {
-        self.bytecode.push(Opcode::StoreVar as u8);
-        let bytes = name.as_bytes();
-        self.bytecode.push(bytes.len() as u8);
-        self.bytecode.extend_from_slice(bytes);
+        if self.is_compiling_fn {
+            if let Some(&idx) = self.vars.get(name) {
+                self.bytecode.push(Opcode::StoreVarSlot as u8);
+                self.bytecode.extend_from_slice(&idx.to_le_bytes());
+                return;
+            }
+        }
+        if let Some(&idx) = self.globals.get(name) {
+            self.bytecode.push(Opcode::StoreGlobalSlot as u8);
+            self.bytecode.extend_from_slice(&idx.to_le_bytes());
+            return;
+        }
+        if self.is_compiling_fn {
+            let idx = self.vars.len() as u16;
+            self.vars.insert(name.to_string(), idx);
+            self.bytecode.push(Opcode::StoreVarSlot as u8);
+            self.bytecode.extend_from_slice(&idx.to_le_bytes());
+        } else {
+            let idx = self.globals.len() as u16;
+            self.globals.insert(name.to_string(), idx);
+            self.bytecode.push(Opcode::StoreGlobalSlot as u8);
+            self.bytecode.extend_from_slice(&idx.to_le_bytes());
+        }
     }
 
     pub fn into_bytecode(self) -> Vec<u8> { self.bytecode }

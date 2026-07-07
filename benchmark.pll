@@ -1,0 +1,8 @@
+# PLL v2 — Loop performance benchmark
+v i != 0
+v sum != 0
+while i < 100000:
+    sum = sum + i
+    i = i + 1
+end
+render str_from_num(sum)
