@@ -398,13 +398,17 @@ async function loadProjects() {
     try {
         const projects = await api('/api/projects');
         elProjectSelect.innerHTML = '<option value="">-- Projet local --</option>';
-        projects.forEach(p => {
-            const opt = document.createElement('option');
-            opt.value = p.id;
-            opt.textContent = p.name;
-            if (p.id === currentProjectId) opt.selected = true;
-            elProjectSelect.appendChild(opt);
-        });
+        if (Array.isArray(projects)) {
+            projects.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name;
+                if (p.id === currentProjectId) opt.selected = true;
+                elProjectSelect.appendChild(opt);
+            });
+        } else {
+            console.warn('api/projects did not return an array:', projects);
+        }
     } catch (e) { console.warn('Server not running:', e.message); }
 }
 
