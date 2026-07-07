@@ -6,8 +6,8 @@ let monaco, editor;
 let monacoDiffEditor = null;
 let gitAheadFiles = [];
 let filesList = [];
-let openFiles = [];
-let activeFile = null;
+let openFiles = ['logic_flow.agent'];
+let activeFile = 'logic_flow.agent';
 let currentProjectId = null;
 let gcaSessionId = null;
 let gcaGeneration = 0;
@@ -330,11 +330,20 @@ function renderTree(container, tree, depth, expanded = new Set(), parentPath = '
 
 async function loadFileToEditor(path) {
     if (!path) return;
+    if (path === 'logic_flow.agent') {
+        const navOrch = document.getElementById('nav-item-orchestrator');
+        if (navOrch && !navOrch.classList.contains('active')) {
+            navOrch.click();
+        }
+        activeFile = path;
+        renderTabs();
+        return;
+    }
     const navVfs = document.getElementById('nav-item-vfs');
     if (navVfs && !navVfs.classList.contains('active')) {
         navVfs.click();
     }
-    if (activeFile) set_virtual_file(activeFile, getEditorContent());
+    if (activeFile && activeFile !== 'logic_flow.agent') set_virtual_file(activeFile, getEditorContent());
     if (!openFiles.includes(path)) openFiles.push(path);
     activeFile = path;
     let content = get_virtual_file(path);
@@ -1339,6 +1348,10 @@ async function main() {
         }
         if (!currentProjectId) {
             logToTerminal('Bienvenue ! Crée ou sélectionne un projet pour commencer.', 'sys-msg');
+            openFiles = ['logic_flow.agent', 'orchestrator.js'];
+            activeFile = 'logic_flow.agent';
+            set_virtual_file('orchestrator.js', '// PLL Orchestrator runtime logic\nconsole.log("Agent Orchestrator initialized.");');
+            renderTabs();
         }
         refreshGitStatus();
     } catch (e) {
@@ -1626,9 +1639,10 @@ async function publishFromVault(key) {
 async function refreshPackages() {
     try {
         const pkgs = await api('/api/packages');
+        if (!elPackagesList) return;
         elPackagesList.innerHTML = pkgs.length === 0
             ? '<div class="sys-msg">Aucun paquet.</div>'
-            : pkgs.map(p => `<div class="package-item"><strong>${p.name}</strong> v${p.version} <span class="sys-msg">par ${p.author || '?'}</span> <button class="btn btn-sm btn-secondary view-pkg-btn" data-name="${p.name}" title="Voir le code source">📄</button></div>`).join('');
+            : (Array.isArray(pkgs) ? pkgs.map(p => `<div class="package-item"><strong>${p.name}</strong> v${p.version} <span class="sys-msg">par ${p.author || '?'}</span> <button class="btn btn-sm btn-secondary view-pkg-btn" data-name="${p.name}" title="Voir le code source">📄</button></div>`).join('') : '');
         document.querySelectorAll('.view-pkg-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
                 try {
@@ -1639,7 +1653,7 @@ async function refreshPackages() {
             });
         });
     } catch {
-        elPackagesList.innerHTML = '<div class="sys-msg">Serveur indisponible.</div>';
+        if (elPackagesList) elPackagesList.innerHTML = '<div class="sys-msg">Serveur indisponible.</div>';
     }
 }
 
