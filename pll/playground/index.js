@@ -2071,11 +2071,17 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 function switchTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => {
+        c.classList.remove('active');
+        c.style.display = 'none';
+    });
     const tab = document.querySelector(`[data-tab="${tabId}"]`);
     if (tab) tab.classList.add('active');
     const content = document.getElementById(tabId);
-    if (content) content.classList.add('active');
+    if (content) {
+        content.classList.add('active');
+        content.style.display = (tabId === 'tab-agentic' || tabId === 'tab-terminal') ? 'flex' : 'block';
+    }
 }
 
 // Settings Modal bindings
