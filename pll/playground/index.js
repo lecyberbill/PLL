@@ -488,14 +488,18 @@ async function loadProjectFromServer(projectId) {
         }
     }
     await walk(tree);
-    openFiles = [];  // Don't open files by default — user clicks to open
-    activeFile = null;
+    openFiles = ['logic_flow.agent'];
+    activeFile = 'logic_flow.agent';
     clearEditor();
     renderTabs();
     renderVfsList();
     logToTerminal(`Projet chargé (${filesList.length} fichiers).`, 'sys-msg');
     localStorage.setItem('pll-last-project', projectId.toString());
     elBtnDeleteProject.style.display = '';
+    const navOrch = document.getElementById('nav-item-orchestrator');
+    if (navOrch && !navOrch.classList.contains('active')) {
+        navOrch.click();
+    }
     await loadProjects();
     refreshGitStatus();
     loadConversations();
