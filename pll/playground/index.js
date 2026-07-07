@@ -83,9 +83,12 @@ async function api(path, options = {}) {
         throw new Error(`API ${resp.status}: ${text}`);
     }
     if (resp.status === 204) return null;
-    const ct = resp.headers.get('content-type') || '';
-    if (ct.includes('application/json')) return resp.json();
-    return resp.text();
+    const text = await resp.text();
+    try {
+        return JSON.parse(text);
+    } catch {
+        return text;
+    }
 }
 
 function getEditorContent() { return editor ? editor.getValue() : ''; }
