@@ -244,17 +244,98 @@
     <!-- Modals & Drawers -->
     <div class="modal" id="settings-modal">
         <div class="modal-content">
-            <h2>Paramètres</h2>
-            <div class="form-group">
-                <label>Backend Agent</label>
-                <select id="settings-backend" class="project-select">
+            <h2>Paramètres de l'Agent & Sessions</h2>
+            <div class="form-group" style="margin-top: 10px;">
+                <label>Modèle de Langue / Backend</label>
+                <select id="settings-backend" class="project-select" style="width: 100%; display: block; margin-top: 4px;">
                     <option value="auto">Auto (Conseillé)</option>
                     <option value="deepseek">DeepSeek</option>
                     <option value="lmstudio">LM Studio (Local)</option>
                 </select>
             </div>
-            <div class="modal-actions">
+            <div class="form-group" style="margin-top: 18px;">
+                <label>Session active</label>
+                <div style="display: flex; gap: 8px; margin-top: 4px;">
+                    <select id="settings-session-select" class="project-select" style="flex: 1; min-width: 0;">
+                        <option value="">-- Aucune session --</option>
+                    </select>
+                    <button id="btn-new-session" class="btn btn-primary">Nouvelle</button>
+                </div>
+                <small style="color: var(--text-muted); margin-top: 6px; display: block; line-height: 1.4; font-size: 11px;">
+                    Les sessions fragmentent votre historique de conversation. Si le contexte devient trop lourd ou commence à faire des erreurs, créez une nouvelle session !
+                </small>
+            </div>
+            <div class="form-group" style="margin-top: 18px;">
+                <label style="display: flex; align-items: center; gap: 8px; font-weight: 500; cursor: pointer; user-select: none; font-size: 12px;">
+                    <input type="checkbox" id="settings-enable-gca" style="width: auto; margin: 0;"> Activer l'architecture GCA (Primaire/Ombre)
+                </label>
+            </div>
+            <div class="modal-actions" style="margin-top: 24px;">
                 <button id="btn-settings-close" class="btn btn-secondary">Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="vfs-modal">
+        <div class="modal-content">
+            <h2>Nouveau fichier</h2>
+            <input type="text" id="modal-file-path" placeholder="mon_fichier.py" style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); padding: 8px; border-radius: var(--radius-sm); color: var(--text-primary); margin-top: 8px; font-size: 12px; outline: none;">
+            <textarea id="modal-file-content" placeholder="Contenu..." style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); padding: 8px; border-radius: var(--radius-sm); color: var(--text-primary); margin-top: 12px; font-size: 12px; outline: none; resize: vertical; min-height: 120px;"></textarea>
+            <div class="modal-actions">
+                <button id="modal-cancel" class="btn btn-secondary">Annuler</button>
+                <button id="modal-save" class="btn btn-primary">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="project-modal">
+        <div class="modal-content">
+            <h2 id="project-modal-title">Nouveau Projet</h2>
+            <div class="form-group" style="margin-top: 12px;">
+                <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Nom du projet</label>
+                <input type="text" id="modal-project-name" placeholder="mon-projet" style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); padding: 8px; border-radius: var(--radius-sm); color: var(--text-primary); margin-top: 4px; font-size: 12px; outline: none;">
+            </div>
+            <div class="form-group" style="margin-top: 12px;">
+                <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Description</label>
+                <textarea id="modal-project-desc" placeholder="Que va faire ce projet ?" rows="2" style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); padding: 8px; border-radius: var(--radius-sm); color: var(--text-primary); margin-top: 4px; font-size: 12px; outline: none; resize: none;"></textarea>
+            </div>
+            <div class="form-group" style="margin-top: 12px;">
+                <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 6px;">Template</label>
+                <div class="template-chips" id="template-chips" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <div class="template-chip active" data-tpl="empty" style="background: var(--bg-dark); border: 1px solid var(--border-color); padding: 4px 10px; border-radius: 99px; font-size: 11px; cursor: pointer;">🧩 Vide</div>
+                    <div class="template-chip" data-tpl="flask" style="background: var(--bg-dark); border: 1px solid var(--border-color); padding: 4px 10px; border-radius: 99px; font-size: 11px; cursor: pointer;">🐍 Flask API</div>
+                    <div class="template-chip" data-tpl="cli" style="background: var(--bg-dark); border: 1px solid var(--border-color); padding: 4px 10px; border-radius: 99px; font-size: 11px; cursor: pointer;">⚙️ CLI Tool</div>
+                    <div class="template-chip" data-tpl="pll" style="background: var(--bg-dark); border: 1px solid var(--border-color); padding: 4px 10px; border-radius: 99px; font-size: 11px; cursor: pointer;">🔷 PLL</div>
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: 12px;">
+                <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Chemin disque (optionnel)</label>
+                <input type="text" id="modal-project-path" placeholder="C:\dev\mon-projet" style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); padding: 8px; border-radius: var(--radius-sm); color: var(--text-primary); margin-top: 4px; font-size: 12px; outline: none;">
+            </div>
+            <div class="modal-actions">
+                <button id="project-modal-cancel" class="btn btn-secondary">Annuler</button>
+                <button id="project-modal-save" class="btn btn-primary">Créer</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="diff-modal">
+        <div class="modal-content" style="max-width: 950px; width: 90vw; max-height: 85vh; display: flex; flex-direction: column;">
+            <h2 style="display: flex; justify-content: space-between; align-items: center; margin-top: 0;">
+                <span>📊 Git Diff</span>
+                <span id="diff-badge" style="font-size: 12px; color: var(--text-muted);"></span>
+            </h2>
+            <div class="diff-actions" style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center;">
+                <button id="diff-btn-all" class="btn btn-sm btn-secondary">Tout</button>
+                <button id="diff-btn-staged" class="btn btn-sm btn-secondary">Staged</button>
+                <select id="diff-files-dropdown" style="background: var(--bg-dark); color: var(--text-primary); border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 4px; font-size: 13px; outline: none; display: none; max-width: 300px;"></select>
+                <button id="diff-btn-close" class="btn btn-sm btn-secondary" style="margin-left: auto;">Fermer</button>
+            </div>
+            <div id="monaco-diff-container" style="flex: 1; min-height: 380px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; display: none; margin-bottom: 12px;"></div>
+            <pre id="diff-content" style="flex: 1; overflow: auto; background: rgba(0,0,0,0.3); padding: 12px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; margin: 0;"></pre>
+            <div class="git-commit-bar" style="display: flex; gap: 8px; margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 12px; align-items: center;">
+                <input type="text" id="git-commit-msg" placeholder="Message de commit (laisser vide pour générer par l'Agent)..." style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px; outline: none;">
+                <button id="git-btn-commit" class="btn btn-primary" style="padding: 8px 16px;">💾 Commit</button>
             </div>
         </div>
     </div>
