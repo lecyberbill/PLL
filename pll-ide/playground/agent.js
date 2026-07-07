@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { api } from './api.js';
 import { logToTerminal, escHtml } from './ui.js';
-import { loadProjectFromServer } from './editor.js';
+import { loadProjectFromServer, renderVfsList } from './editor.js';
 import { set_virtual_file, get_virtual_file } from './pkg/pll_wasm.js';
 
 export function addAgenticMessage(role, content) {
@@ -540,6 +540,10 @@ export async function executeToolJS(tool, args) {
             method: 'POST',
             body: JSON.stringify({ path: args.path, content: args.content })
         });
+        if (!state.filesList.includes(args.path)) {
+            state.filesList.push(args.path);
+        }
+        renderVfsList();
         return `File ${args.path} written successfully.`;
     }
     if (tool === 'read_file') {
@@ -554,6 +558,11 @@ export async function executeToolJS(tool, args) {
         await api(`/api/projects/${state.currentProjectId}/files/${args.path}`, {
             method: 'DELETE'
         });
+        const idx = state.filesList.indexOf(args.path);
+        if (idx !== -1) {
+            state.filesList.splice(idx, 1);
+        }
+        renderVfsList();
         return `File ${args.path} deleted.`;
     }
     if (tool === 'final_answer') {

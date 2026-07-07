@@ -70,7 +70,16 @@ pub fn list_project_files(project_id: i64) -> Result<Vec<String>, String> {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if name == ".git" || name == ".venv" || name == "node_modules" || name == "target" || name == "__pycache__" {
+                    if name == ".git" 
+                        || name == ".venv" 
+                        || name == "node_modules" 
+                        || name == "target" 
+                        || name == "__pycache__"
+                        || name == "pll-ide"
+                        || name == "pll-lang"
+                        || name == "pll"
+                        || name == ".pll_packages"
+                    {
                         continue;
                     }
                     if path.is_file() {
