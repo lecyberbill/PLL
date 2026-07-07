@@ -330,6 +330,10 @@ function renderTree(container, tree, depth, expanded = new Set(), parentPath = '
 
 async function loadFileToEditor(path) {
     if (!path) return;
+    const navVfs = document.getElementById('nav-item-vfs');
+    if (navVfs && !navVfs.classList.contains('active')) {
+        navVfs.click();
+    }
     if (activeFile) set_virtual_file(activeFile, getEditorContent());
     if (!openFiles.includes(path)) openFiles.push(path);
     activeFile = path;
@@ -1232,7 +1236,11 @@ async function main() {
             if ([...projectSelect.options].some(o => o.value === lastProjectId)) {
                 projectSelect.value = lastProjectId;
                 currentProjectId = parseInt(lastProjectId);
-                await loadProjectFromServer(currentProjectId);
+                try {
+                    await loadProjectFromServer(currentProjectId);
+                } catch (err) {
+                    console.warn("Could not load last project from server:", err);
+                }
             }
         }
         if (!currentProjectId) {
@@ -1392,6 +1400,8 @@ function makeDraggable(el) {
     }
 }
 
+let zoomScale = 1.0;
+
 function initVisualCanvas() {
     const trigger = document.getElementById('node-trigger');
     const agent = document.getElementById('node-agent');
@@ -1401,10 +1411,34 @@ function initVisualCanvas() {
     window.addEventListener('resize', drawConnection);
     setTimeout(drawConnection, 500);
 
-    // floating canvas buttons mock
-    document.getElementById('ctrl-zoom-in')?.addEventListener('click', () => alert('Zoom In'));
-    document.getElementById('ctrl-zoom-out')?.addEventListener('click', () => alert('Zoom Out'));
+    // Dynamic zoom and fit action handlers
+    document.getElementById('ctrl-zoom-in')?.addEventListener('click', () => {
+        zoomScale = Math.min(2.0, zoomScale + 0.1);
+        document.querySelectorAll('.flow-node').forEach(node => {
+            node.style.transform = `scale(${zoomScale})`;
+        });
+        const svg = document.getElementById('canvas-svg');
+        if (svg) svg.style.transform = `scale(${zoomScale})`;
+        drawConnection();
+    });
+    
+    document.getElementById('ctrl-zoom-out')?.addEventListener('click', () => {
+        zoomScale = Math.max(0.5, zoomScale - 0.1);
+        document.querySelectorAll('.flow-node').forEach(node => {
+            node.style.transform = `scale(${zoomScale})`;
+        });
+        const svg = document.getElementById('canvas-svg');
+        if (svg) svg.style.transform = `scale(${zoomScale})`;
+        drawConnection();
+    });
+    
     document.getElementById('ctrl-fit')?.addEventListener('click', () => {
+        zoomScale = 1.0;
+        document.querySelectorAll('.flow-node').forEach(node => {
+            node.style.transform = `scale(1.0)`;
+        });
+        const svg = document.getElementById('canvas-svg');
+        if (svg) svg.style.transform = `scale(1.0)`;
         if (trigger) { trigger.style.left = '100px'; trigger.style.top = '150px'; }
         if (agent) { agent.style.left = '350px'; agent.style.top = '250px'; }
         drawConnection();

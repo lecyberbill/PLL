@@ -162,14 +162,14 @@ body {
 
 /* Tabs bar in editor header */
 .editor-tabs-bar { display: flex; gap: 4px; overflow-x: auto; flex: 1; }
-.editor-tab {
+.editor-tab, .editor-tab-item {
     padding: 6px 12px; font-size: 11px; color: var(--text-muted); border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     cursor: pointer; display: flex; align-items: center; gap: 6px; border-bottom: 2px solid transparent;
 }
-.editor-tab:hover { color: #fff; }
-.editor-tab.active { color: #fff; border-bottom-color: var(--accent); background: rgba(255,255,255,0.02); }
-.close-tab-btn { font-size: 8px; color: var(--text-muted); cursor: pointer; }
-.close-tab-btn:hover { color: #ef4444; }
+.editor-tab:hover, .editor-tab-item:hover { color: #fff; }
+.editor-tab.active, .editor-tab-item.active { color: #fff; border-bottom-color: var(--accent); background: rgba(255,255,255,0.02); }
+.close-tab-btn, .tab-close { font-size: 8px; color: var(--text-muted); cursor: pointer; background: none; border: none; }
+.close-tab-btn:hover, .tab-close:hover { color: #ef4444; }
 
 /* Right chat sidepanel */
 .results-pane {
