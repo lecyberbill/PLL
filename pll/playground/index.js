@@ -1670,10 +1670,19 @@ async function publishFromVault(key) {
 async function refreshPackages() {
     try {
         const pkgs = await api('/api/packages');
-        if (!elPackagesList) return;
-        elPackagesList.innerHTML = pkgs.length === 0
+        const listEl = document.getElementById('packages-list');
+        if (!listEl) return;
+        listEl.innerHTML = pkgs.length === 0
             ? '<div class="sys-msg">Aucun paquet.</div>'
-            : (Array.isArray(pkgs) ? pkgs.map(p => `<div class="package-item"><strong>${p.name}</strong> v${p.version} <span class="sys-msg">par ${p.author || '?'}</span> <button class="btn btn-sm btn-secondary view-pkg-btn" data-name="${p.name}" title="Voir le code source">📄</button></div>`).join('') : '');
+            : (Array.isArray(pkgs) ? pkgs.map(p => `
+                <div class="package-item" style="padding: 8px 10px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: var(--radius-sm); margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                    <div style="display:flex; flex-direction:column; min-width:0; flex:1;">
+                        <strong style="font-size:12px; color:var(--text-primary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;" title="${p.name}">${p.name}</strong>
+                        <span style="font-size:10px; color:var(--text-muted); display:inline-block; margin-top:2px;">v${p.version} • par ${p.author || '?'}</span>
+                    </div>
+                    <button class="btn btn-sm btn-secondary view-pkg-btn" data-name="${p.name}" title="Voir le code source" style="padding: 4px 6px; font-size: 10px; flex-shrink:0;">📄</button>
+                </div>
+            `).join('') : '');
         document.querySelectorAll('.view-pkg-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
                 try {
@@ -1684,7 +1693,8 @@ async function refreshPackages() {
             });
         });
     } catch {
-        if (elPackagesList) elPackagesList.innerHTML = '<div class="sys-msg">Serveur indisponible.</div>';
+        const listEl = document.getElementById('packages-list');
+        if (listEl) listEl.innerHTML = '<div class="sys-msg">Serveur indisponible.</div>';
     }
 }
 
