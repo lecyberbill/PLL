@@ -1,5 +1,5 @@
 """
-[WFGY] Zone: SAFE | λ: 0.2 | Fallbacks: 2/DP_API_KEY Fallback, Semantic Jaccard Cache | Action: Support semantic LLM cache and uppercase DP_API_KEY environment variable
+[WFGY] Zone: SAFE | λ: 0.2 | Fallbacks: 2/DP_API_KEY Fallback, Semantic Jaccard Cache | Action: Support semantic LLM cache and uppercase DP_API_KEY environment variable (Cache Cleared)
 LLM Proxy Service
 
 Supports two backends:
