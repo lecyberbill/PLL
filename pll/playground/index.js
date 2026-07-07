@@ -76,6 +76,109 @@ let termHistory = [];
 let termHistIdx = -1;
 
 async function api(path, options = {}) {
+    if (window.__TAURI__) {
+        const invoke = window.__TAURI__.core.invoke;
+        const url = new URL(path, window.location.origin);
+        const pathname = url.pathname;
+        const params = url.searchParams;
+        
+        // 1. Projects endpoints
+        if (pathname === '/api/projects') {
+            if (options.method === 'POST') {
+                const body = JSON.parse(options.body);
+                return await invoke('create_project', { 
+                    name: body.name, 
+                    description: body.description, 
+                    diskPath: body.disk_path 
+                });
+            } else {
+                return await invoke('list_projects');
+            }
+        }
+        
+        if (pathname.startsWith('/api/projects/')) {
+            const parts = pathname.split('/');
+            const projectId = parseInt(parts[3]);
+            
+            // /api/projects/{id}/files/rename
+            if (parts.length === 6 && parts[4] === 'files' && parts[5] === 'rename') {
+                const oldPath = params.get('old_path');
+                const newPath = params.get('new_path');
+                return await invoke('rename_project_file', { projectId, oldPath, newPath });
+            }
+            
+            // /api/projects/{id}/files
+            if (parts.length === 5 && parts[4] === 'files') {
+                if (options.method === 'POST') {
+                    const body = JSON.parse(options.body);
+                    return await invoke('write_project_file', { 
+                        projectId, 
+                        path: body.path, 
+                        content: body.content 
+                    });
+                } else {
+                    return await invoke('list_project_files', { projectId });
+                }
+            }
+            
+            // /api/projects/{id}/files/{file_path}
+            if (parts.length >= 6 && parts[4] === 'files') {
+                const filePath = parts.slice(5).join('/');
+                if (options.method === 'DELETE') {
+                    return await invoke('delete_project_file', { projectId, path: filePath });
+                } else {
+                    return await invoke('get_project_file', { projectId, path: filePath });
+                }
+            }
+
+            if (options.method === 'DELETE') {
+                const keep = params.get('keep_files') !== 'false';
+                return await invoke('delete_project', { projectId, keepFiles: keep });
+            }
+            
+            return await invoke('get_project', { projectId });
+        }
+        
+        // 2. Git endpoints
+        if (pathname.startsWith('/api/git/')) {
+            const parts = pathname.split('/');
+            const projectId = parseInt(parts[3]);
+            const action = parts[4];
+            
+            if (action === 'status') return await invoke('get_git_status', { projectId });
+            if (action === 'commit') {
+                const body = JSON.parse(options.body || '{}');
+                return await invoke('git_commit', { projectId, message: body.message, autoMessage: body.auto_message });
+            }
+            if (action === 'init') return await invoke('git_init', { projectId });
+            if (action === 'remote') {
+                const body = JSON.parse(options.body || '{}');
+                return await invoke('git_remote', { projectId, url: body.url });
+            }
+            if (action === 'push') return await invoke('git_push', { projectId });
+            if (action === 'pull') return await invoke('git_pull', { projectId });
+            if (action === 'log') return await invoke('git_log', { projectId });
+            if (action === 'diff') return await invoke('git_diff', { projectId });
+            if (action === 'show') {
+                const filePath = params.get('file_path');
+                return await invoke('git_show', { projectId, filePath });
+            }
+        }
+        
+        // 3. LLM endpoints
+        if (pathname === '/api/llm/chat' || pathname === '/api/agentic/chat') {
+            const body = JSON.parse(options.body || '{}');
+            const res = await invoke('chat_completion', {
+                messages: body.messages || [],
+                systemPrompt: body.system || null,
+                temperature: body.temperature || null,
+                maxTokens: body.max_tokens || null,
+                backend: body.backend || null
+            });
+            return { response: res.response, backend: res.backend };
+        }
+    }
+    
     const headers = { 'Content-Type': 'application/json', ...options.headers };
     const resp = await fetch(`${API_BASE}${path}`, { ...options, headers });
     if (!resp.ok) {
