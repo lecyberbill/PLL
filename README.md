@@ -58,19 +58,21 @@ Open **http://127.0.0.1:8080** in your browser. Create a project and start chatt
 - Data types: numbers, strings, booleans, lists, records
 - Run via CLI: `pll run file.pll` or `pll run --bc file.pll` (bytecode)
 
-### 🖥️ Frontend
-- Monaco Editor with dark theme and PLL syntax highlighting
-- Tree-based file manager with expand/collapse
-- Git status bar (branch, changes, ahead/behind)
-- Resizable panes between editor and results
-- 30+ language auto-detection
+### 🖥️ Frontend & Workspace
+- **Customizable Layouts**: Dock the console/agent panel to the right or bottom of the workspace; collapse or expand the file explorer sidebar.
+- **Monaco Editor**: dark theme, PLL syntax tokenizers, autocomplete templates, and auto-indentation.
+- **Monaco Split-Pane Diff Editor**: Side-by-side file comparisons inside the Git Diff Modal with file drop-down selection.
+- **Collapsible Sidebar Explorer**: VS Code-inspired accordion sections separating file tree nodes and source control lists.
+- **VFS Git Badges & Tooltips**: Color-coded file status highlights in the tree (Staged, Modified, Untracked, Ahead, Synced) with informative hover tooltips.
+- **Interactive Node Graph Details**: Click any node in the agentic thought graph to open a slide-out drawer detailing thoughts, JSON parameters, and outputs.
 
-### 🔧 Developer Features
-- **Disk mode**: projects point to real filesystem directories
-- **DB mode**: virtual projects stored in SQLite
-- **Git integration**: init, commit (auto message via LLM), push, pull, status
-- **GCA** (Generational Context Architecture): agent lifecycle with checkpoints
-- **Package system**: PLL package registry
+### 🔧 Developer & Security Features
+- **Persistent Session Replays**: Persistent ReAct graph steps and timelines reloadable via the sidebar "Sessions" tab.
+- **GCA Parallel Graphs**: Side-by-side visual graphs inside the GCA dashboard displaying Primary and Shadow agent steps simultaneously.
+- **Human-in-the-Loop (HITL) Security**: Intercepts shell execution requests to ask for explicit user permission (Approve/Reject) in the chat feed.
+- **Semantic LLM Cache**: Zero-dependency similarity cache (Jaccard token metric) in `llm_cache.json` to skip redundant LLM API calls.
+- **Disk & DB modes**: virtual SQLite storage or native filesystem projects.
+- **Package system**: Publish PLL packages directly from the GCA Vault.
 
 ## CLI Reference
 
