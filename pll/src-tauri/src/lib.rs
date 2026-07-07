@@ -3,6 +3,7 @@ mod commands {
     pub mod projects;
     pub mod fs_git;
     pub mod llm;
+    pub mod pll_exec;
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -37,7 +38,8 @@ pub fn run() {
         commands::fs_git::git_log,
         commands::fs_git::git_diff,
         commands::fs_git::git_show,
-        commands::llm::chat_completion
+        commands::llm::chat_completion,
+        commands::pll_exec::run_pll_code
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
