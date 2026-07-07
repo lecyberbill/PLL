@@ -929,7 +929,7 @@ async function sendAgenticMessage() {
     placeholder.style.opacity = '0.6';
 
     try {
-        const resp = await fetch('/api/agentic/go-stream', {
+        const resp = await fetch(`${API_BASE}/api/agentic/go-stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1784,7 +1784,7 @@ async function runPllCode() {
     switchTab('tab-logs');
     logToExecutionLogs(`❯ pll run ${activeFile || 'main.pll'}`, "cmd");
     try {
-        const resp = await fetch('/api/pll/exec', {
+        const resp = await fetch(`${API_BASE}/api/pll/exec`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ code })
