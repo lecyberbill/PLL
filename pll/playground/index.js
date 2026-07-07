@@ -1943,14 +1943,8 @@ elAgenticSend?.addEventListener('click', sendAgenticMessage);
 elAgenticInput?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAgenticMessage(); }
 });
-elAgenticClear?.addEventListener('click', () => {
-    elAgenticConversation.innerHTML = '<div class="sys-msg">Posez une question à l\'agent.</div>';
-    agenticConversationHistory = [];
-});
-document.getElementById('btn-agentic-refresh')?.addEventListener('click', () => {
-    elAgenticConversation.innerHTML = '<div class="sys-msg">Posez une question à l\'agent.</div>';
-    agenticConversationHistory = [];
-});
+elAgenticClear?.addEventListener('click', startNewSession);
+document.getElementById('btn-agentic-refresh')?.addEventListener('click', startNewSession);
 
 const elBtnTerminalClear = document.getElementById('btn-terminal-clear');
 if (elBtnTerminalClear) {
