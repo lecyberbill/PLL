@@ -1031,6 +1031,15 @@ async function sendAgenticMessage() {
     const placeholder = addAgenticMessage('system', '🤖 Agent en cours...');
     placeholder.style.opacity = '0.6';
 
+    if (window.__TAURI__) {
+        try {
+            await runReActLoopClient(msg, backend, placeholder);
+        } catch (e) {
+            placeholder.textContent = `⚠️ Erreur : ${e.message}`;
+        }
+        return;
+    }
+
     try {
         const resp = await fetch(`${API_BASE}/api/agentic/go-stream`, {
             method: 'POST',
@@ -1262,6 +1271,274 @@ async function sendAgenticMessage() {
     } catch (e) {
         addAgenticMessage('system', `Erreur: ${e.message}`);
     }
+}
+
+const REACT_SYSTEM_PROMPT = `You are an AI coding assistant that thinks and acts in PLL.
+
+PLL is for planning AND action — call tools using function syntax: list_dir(".").
+You can also respond with plain text when answering a question.
+
+CRITICAL: Do NOT use XML tags like <tool_call>, <tool_name>, or <parameters>.
+Do NOT use JSON or other formats for tool calling. Call tools ONLY using pure inline PLL function syntax, e.g. list_dir(".").
+
+CRITICAL WARNING ON TOOL ARGUMENTS:
+Never use literal placeholder values from documentation examples like "path", "relative/path", or "url" as arguments!
+Always substitute them with real paths, filenames, or URLs (e.g. list_dir("."), read_file("syracuse.pll"), web_fetch("http://127.0.0.1:8080/api/packages")).
+
+PLL quick reference:
+  v x != "text"               - variable
+  v x != ?("prompt")          - LLM belief
+  list_dir(".")               - tool call
+  write_file("main.pll", "...") - write file
+  read_file("main.pll")        - read file
+
+## Tools
+
+### write_file(path, content)
+Create or overwrite a file with full content. Use triple quotes with actual, literal multi-line linebreaks.
+CRITICAL: Do NOT write literal '\\n' characters inside the content string! Write actual newlines directly inside the triple quotes instead.
+Example:
+write_file("test.txt", '''line1
+line2''')
+
+### read_file(path)
+Read a file from the project.
+read_file("relative/path")
+
+### delete_file(path)
+Delete a file.
+delete_file("relative/path")
+
+### list_dir(path)
+List directory contents.
+list_dir(".")
+
+### final_answer(text)
+Call this when you have completed your task to output your final response.
+final_answer("I have completed the files.")
+`;
+
+async function runReActLoopClient(userMessage, backend, placeholder) {
+    const filesListText = filesList.length > 0 ? `Files: ${filesList.join(', ')}` : 'Files: (empty)';
+    let contextStr = `## Project ID: ${currentProjectId}\n${filesListText}\n`;
+    
+    // Extract history messages from the DOM chat bubbles
+    const msgDivs = elAgenticConversation.querySelectorAll('.agentic-message');
+    const historyMsgs = [];
+    msgDivs.forEach(div => {
+        const isUser = div.classList.contains('user');
+        const isAssistant = div.classList.contains('assistant');
+        if (isUser || isAssistant) {
+            const textEl = div.querySelector('div');
+            const text = textEl ? textEl.innerText : div.innerText;
+            historyMsgs.push({
+                role: isUser ? 'user' : 'assistant',
+                content: text
+            });
+        }
+    });
+    
+    // Grab the last 5 messages for prompt context
+    const recentHistory = historyMsgs.slice(-5);
+    if (recentHistory.length > 0) {
+        contextStr += "\n\n## Conversation précédente:\n" + recentHistory.map(m => `${m.role === 'user' ? 'Utilisateur' : 'Assistant'}: ${m.content}`).join('\n');
+    }
+
+    let messages = [
+        { role: 'user', content: userMessage }
+    ];
+    let maxSteps = 20;
+    let answer = '';
+    let finalCode = '';
+    let finalPath = '';
+    
+    // Create a wrapper for visual node graphing in client mode
+    const graphWrapper = addAgenticMessage('system', '<strong>Pensée de l\'Agent (Client Mode) :</strong><div class="agent-nodes-container"></div>');
+    const graphContainer = graphWrapper.querySelector('.agent-nodes-container');
+    
+    let thinkingDots = 0;
+    let thinkingTimer = setInterval(() => {
+        thinkingDots = (thinkingDots + 1) % 4;
+        const dots = '.'.repeat(thinkingDots);
+        placeholder.textContent = `🤖 réfléchit${dots}`;
+    }, 500);
+
+    for (let step = 0; step < maxSteps; step++) {
+        let res;
+        try {
+            res = await api('/api/llm/chat', {
+                method: 'POST',
+                body: JSON.stringify({
+                    messages: messages,
+                    system: REACT_SYSTEM_PROMPT + "\n\n" + contextStr,
+                    temperature: 0.15,
+                    max_tokens: 4096,
+                    backend: backend === 'auto' ? '' : backend
+                })
+            });
+        } catch (err) {
+            clearInterval(thinkingTimer);
+            placeholder.remove();
+            addAgenticMessage('assistant', `❌ Erreur d'appel LLM: ${err.message}`);
+            return;
+        }
+
+        const responseText = res.response;
+        messages.push({ role: 'assistant', content: responseText });
+        
+        // Parse tool calls safely
+        const calls = parseToolCallsJS(responseText);
+        if (calls.length === 0) {
+            clearInterval(thinkingTimer);
+            placeholder.remove();
+            addAgenticMessage('assistant', responseText);
+            if (currentProjectId) await loadProjectFromServer(currentProjectId);
+            return;
+        }
+
+        for (const call of calls) {
+            thinkingDots = 0;
+            const icons = { read_file: '📖', write_file: '✏️', delete_file: '✕', list_dir: '📂', final_answer: '✅' };
+            const icon = icons[call.tool] || '➡️';
+            
+            // Finalize previous running node
+            document.querySelectorAll('.agent-node-status.running').forEach(el => {
+                el.className = 'agent-node-status success';
+                el.textContent = 'Terminé';
+            });
+
+            if (graphContainer.children.length > 0) {
+                const arrow = document.createElement('div');
+                arrow.className = 'agent-node-arrow';
+                arrow.textContent = '🠗';
+                graphContainer.appendChild(arrow);
+            }
+
+            const node = document.createElement('div');
+            node.className = 'agent-node active';
+            node.style.cursor = 'pointer';
+
+            let details = '';
+            if (call.tool === 'write_file') {
+                details = call.args.path;
+                finalCode = call.args.content;
+                finalPath = call.args.path;
+            } else if (call.tool === 'read_file' || call.tool === 'delete_file') {
+                details = call.args.path;
+            } else if (call.tool === 'final_answer') {
+                details = call.args.text.slice(0, 100);
+                answer = call.args.text;
+            }
+
+            node.innerHTML = `
+                <span class="agent-node-icon">${icon}</span>
+                <span class="agent-node-title">${call.tool}</span>
+                <span class="agent-node-details">${escHtml(details)}</span>
+                <span class="agent-node-status running">En cours</span>
+            `;
+            graphContainer.appendChild(node);
+            elAgenticConversation.scrollTop = elAgenticConversation.scrollHeight;
+
+            let result = '';
+            try {
+                result = await executeToolJS(call.tool, call.args);
+                node.querySelector('.agent-node-status').className = 'agent-node-status success';
+                node.querySelector('.agent-node-status').textContent = 'Succès';
+            } catch (err) {
+                result = `ERROR: ${err.message}`;
+                node.querySelector('.agent-node-status').className = 'agent-node-status error';
+                node.querySelector('.agent-node-status').textContent = 'Erreur';
+            }
+
+            node.stepData = {
+                tool: call.tool,
+                icon: icon,
+                args: call.args,
+                result: result,
+                thinking: responseText
+            };
+            node.onclick = () => openNodeDetailsDrawer(node.stepData);
+
+            messages.push({
+                role: 'user',
+                content: `TOOL_RESULT [${call.tool}]: ${result}`
+            });
+        }
+    }
+
+    clearInterval(thinkingTimer);
+    placeholder.remove();
+    
+    if (finalCode && finalPath) {
+        if (!filesList.includes(finalPath)) filesList.push(finalPath);
+        addAgenticMessage('assistant', `✅ **Terminé** — fichiers créés. Consulte l'onglet Fichiers.`);
+    } else if (answer) {
+        addAgenticMessage('assistant', answer);
+    } else {
+        addAgenticMessage('assistant', `✅ Terminé.`);
+    }
+    if (currentProjectId) await loadProjectFromServer(currentProjectId);
+}
+
+function parseToolCallsJS(text) {
+    const calls = [];
+    const knownTools = ["write_file", "read_file", "delete_file", "list_dir", "final_answer"];
+    
+    // Match write_file with multi-line quote boundaries (''', """, `, ", ')
+    const writePattern = /write_file\s*\(\s*["']([^"']+)["']\s*,\s*(?:'''([\s\S]*?)'''|"""([\s\S]*?)"""|`([\s\S]*?)`|"([\s\S]*?)"|'([\s\S]*?)')\s*\)/g;
+    let match;
+    while ((match = writePattern.exec(text)) !== null) {
+        const path = match[1];
+        const content = match[2] || match[3] || match[4] || match[5] || match[6] || "";
+        calls.push({
+            tool: "write_file",
+            args: { path, content }
+        });
+    }
+
+    // Match other simple tools
+    const simplePattern = /(read_file|delete_file|list_dir|final_answer)\s*\(\s*(?:'''([\s\S]*?)'''|"""([\s\S]*?)"""|`([\s\S]*?)`|"([\s\S]*?)"|'([\s\S]*?)')\s*\)/g;
+    // Reset index before execution
+    simplePattern.lastIndex = 0;
+    while ((match = simplePattern.exec(text)) !== null) {
+        const tool = match[1];
+        const arg = match[2] || match[3] || match[4] || match[5] || match[6] || "";
+        if (tool === 'read_file' || tool === 'delete_file' || tool === 'list_dir') {
+            calls.push({ tool, args: { path: arg } });
+        } else if (tool === 'final_answer') {
+            calls.push({ tool, args: { text: arg } });
+        }
+    }
+    
+    return calls;
+}
+
+async function executeToolJS(tool, args) {
+    if (tool === 'write_file') {
+        await api(`/api/projects/${currentProjectId}/files`, {
+            method: 'POST',
+            body: JSON.stringify({ path: args.path, content: args.content })
+        });
+        return `File ${args.path} written successfully.`;
+    }
+    if (tool === 'read_file') {
+        const res = await api(`/api/projects/${currentProjectId}/files/${args.path}`);
+        return res.content;
+    }
+    if (tool === 'list_dir') {
+        const res = await api(`/api/projects/${currentProjectId}/files`);
+        return JSON.stringify(res);
+    }
+    if (tool === 'delete_file') {
+        await api(`/api/projects/${currentProjectId}/files/${args.path}`, {
+            method: 'DELETE'
+        });
+        return `File ${args.path} deleted.`;
+    }
+    if (tool === 'final_answer') {
+        return args.text;
+    }
+    throw new Error(`Tool inconnu ${tool}`);
 }
 
 function updateGcaTabVisibility(enabled) {
