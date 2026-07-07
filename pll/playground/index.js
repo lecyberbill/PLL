@@ -101,22 +101,6 @@ function clearEditor() {
     setEditorLanguage('plaintext');
 }
 
-function switchTab(tabId) {
-    document.querySelectorAll('.results-pane .tab-btn').forEach(btn => {
-        if (btn.getAttribute('data-tab') === tabId) {
-            btn.classList.add('active');
-        } else {
-            btn.classList.remove('active');
-        }
-    });
-    document.querySelectorAll('.results-pane .tab-content').forEach(c => {
-        if (c.getAttribute('id') === tabId) {
-            c.classList.add('active');
-        } else {
-            c.classList.remove('active');
-        }
-    });
-}
 
 if (elAgenticConversation) {
     elAgenticConversation.addEventListener('click', async (e) => {
