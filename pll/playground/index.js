@@ -1211,49 +1211,13 @@ async function main() {
         const gcaEnabled = localStorage.getItem('pll-enable-gca') === 'true';
         if (elSettingsEnableGca) elSettingsEnableGca.checked = gcaEnabled;
         updateGcaTabVisibility(gcaEnabled);
-        monaco = await loadMonaco();
-        editor = monaco.editor.create(elEditorContainer, {
-            value: '', language: 'python', theme: 'pll-dark',
-            fontSize: 14, fontFamily: "'Fira Code', monospace",
-            minimap: { enabled: false }, lineNumbers: 'on',
-            automaticLayout: true, tabSize: 4, insertSpaces: true,
-            bracketPairColorization: { enabled: true },
-            renderLineHighlight: 'line', cursorBlinking: 'smooth',
-        });
-        editor.onDidChangeModelContent(() => {
-            if (activeFile) set_virtual_file(activeFile, editor.getValue());
-        });
-        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, (e) => {
-            saveProjectToServer();
-        });
-        clearDefaults();
-        await loadProjects();
-        await refreshPackages();
-        // Restore last project
-        const lastProjectId = localStorage.getItem('pll-last-project');
-        if (lastProjectId) {
-            const projectSelect = document.getElementById('project-select');
-            if ([...projectSelect.options].some(o => o.value === lastProjectId)) {
-                projectSelect.value = lastProjectId;
-                currentProjectId = parseInt(lastProjectId);
-                try {
-                    await loadProjectFromServer(currentProjectId);
-                } catch (err) {
-                    console.warn("Could not load last project from server:", err);
-                }
-            }
-        }
-        if (!currentProjectId) {
-            logToTerminal('Bienvenue ! Crée ou sélectionne un projet pour commencer.', 'sys-msg');
-        }
-        refreshGitStatus();
 
-        // Initialize sidebar tab events
+        // 1. Initialize sidebar tab events
         document.getElementById('tab-btn-vfs')?.addEventListener('click', () => switchSidebarTab('vfs'));
         document.getElementById('tab-btn-sessions')?.addEventListener('click', () => switchSidebarTab('sessions'));
         document.getElementById('btn-sidebar-new-session')?.addEventListener('click', startNewSession);
 
-        // Initialize layout configuration
+        // 2. Initialize layout configuration
         const layoutSelect = document.getElementById('layout-select');
         if (layoutSelect) {
             const savedLayout = localStorage.getItem('pll-layout') || 'right';
@@ -1266,7 +1230,7 @@ async function main() {
             });
         }
         
-        // Initialize Left Navigation Items
+        // 3. Initialize Left Navigation Items
         const navItems = ['nav-item-vfs', 'nav-item-orchestrator', 'nav-item-db', 'nav-item-settings'];
         navItems.forEach(id => {
             document.getElementById(id)?.addEventListener('click', (e) => {
@@ -1295,7 +1259,7 @@ async function main() {
             });
         });
 
-        // Initialize Right Panel tabs
+        // 4. Initialize Right Panel tabs
         document.querySelectorAll('.results-pane .tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const tabId = btn.getAttribute('data-tab');
@@ -1303,10 +1267,10 @@ async function main() {
             });
         });
 
-        // Initialize Canvas Drag and Connections
+        // 5. Initialize Canvas Drag and Connections
         initVisualCanvas();
 
-        // Initialize Git Commit from Sidebar
+        // 6. Initialize Git Commit from Sidebar
         document.getElementById('git-btn-commit-sidebar')?.addEventListener('click', async () => {
             if (!currentProjectId) return;
             const msgInput = document.getElementById('git-commit-msg-sidebar');
@@ -1333,6 +1297,50 @@ async function main() {
                 btn.textContent = '💾 Commit';
             }
         });
+
+        // 7. Load Monaco Editor with isolated error safety
+        try {
+            monaco = await loadMonaco();
+            editor = monaco.editor.create(elEditorContainer, {
+                value: '', language: 'python', theme: 'pll-dark',
+                fontSize: 14, fontFamily: "'Fira Code', monospace",
+                minimap: { enabled: false }, lineNumbers: 'on',
+                automaticLayout: true, tabSize: 4, insertSpaces: true,
+                bracketPairColorization: { enabled: true },
+                renderLineHighlight: 'line', cursorBlinking: 'smooth',
+            });
+            editor.onDidChangeModelContent(() => {
+                if (activeFile) set_virtual_file(activeFile, editor.getValue());
+            });
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, (e) => {
+                saveProjectToServer();
+            });
+        } catch (monacoErr) {
+            console.error("Monaco load blocked or failed:", monacoErr);
+        }
+
+        // 8. Load Projects and Git states from server
+        clearDefaults();
+        await loadProjects();
+        await refreshPackages();
+        // Restore last project
+        const lastProjectId = localStorage.getItem('pll-last-project');
+        if (lastProjectId) {
+            const projectSelect = document.getElementById('project-select');
+            if ([...projectSelect.options].some(o => o.value === lastProjectId)) {
+                projectSelect.value = lastProjectId;
+                currentProjectId = parseInt(lastProjectId);
+                try {
+                    await loadProjectFromServer(currentProjectId);
+                } catch (err) {
+                    console.warn("Could not load last project from server:", err);
+                }
+            }
+        }
+        if (!currentProjectId) {
+            logToTerminal('Bienvenue ! Crée ou sélectionne un projet pour commencer.', 'sys-msg');
+        }
+        refreshGitStatus();
     } catch (e) {
         logToTerminal(`Erreur: ${e}`, 'error-msg');
     }
