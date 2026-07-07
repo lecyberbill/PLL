@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/pll-core", "crates/pll-lexer", "crates/pll-parser", "crates/pll-typeck", "crates/pll-codegen", "crates/pll-runtime", "crates/pll-cli", "crates/pll-bytecode", "crates/pll-wasm", "src-tauri"]
+members = ["crates/pll-core", "crates/pll-lexer", "crates/pll-parser", "crates/pll-typeck", "crates/pll-codegen", "crates/pll-runtime", "crates/pll-cli", "crates/pll-bytecode", "crates/pll-wasm"]
 
 [workspace.package]
 version = "0.2.0"

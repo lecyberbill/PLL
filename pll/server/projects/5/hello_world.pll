@@ -1,6 +1,0 @@
-The code uses `print` which is Python syntax. In PLL, use `render` instead.
-
-Corrected code:
-```
-render "hello world"
-```

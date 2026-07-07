@@ -13,14 +13,12 @@ pub struct PllExecResponse {
 fn find_pll_cli() -> Option<PathBuf> {
     // Look in target/release, target/debug, parent, etc.
     let paths = vec![
-        PathBuf::from("../target/release/pll-cli.exe"),
-        PathBuf::from("../target/release/pll-cli"),
-        PathBuf::from("target/release/pll-cli.exe"),
-        PathBuf::from("target/release/pll-cli"),
-        PathBuf::from("../target/debug/pll-cli.exe"),
-        PathBuf::from("../target/debug/pll-cli"),
-        PathBuf::from("target/debug/pll-cli.exe"),
-        PathBuf::from("target/debug/pll-cli"),
+        PathBuf::from("../../pll-lang/target/release/pll-cli.exe"),
+        PathBuf::from("../../pll-lang/target/release/pll-cli"),
+        PathBuf::from("../pll-lang/target/release/pll-cli.exe"),
+        PathBuf::from("../pll-lang/target/release/pll-cli"),
+        PathBuf::from("../../pll-lang/target/debug/pll-cli.exe"),
+        PathBuf::from("../../pll-lang/target/debug/pll-cli"),
         PathBuf::from("./pll-cli.exe"),
         PathBuf::from("./pll-cli"),
     ];
