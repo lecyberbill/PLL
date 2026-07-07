@@ -101,6 +101,23 @@ function clearEditor() {
     setEditorLanguage('plaintext');
 }
 
+function switchTab(tabId) {
+    document.querySelectorAll('.results-pane .tab-btn').forEach(btn => {
+        if (btn.getAttribute('data-tab') === tabId) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+    document.querySelectorAll('.results-pane .tab-content').forEach(c => {
+        if (c.getAttribute('id') === tabId) {
+            c.classList.add('active');
+        } else {
+            c.classList.remove('active');
+        }
+    });
+}
+
 if (elAgenticConversation) {
     elAgenticConversation.addEventListener('click', async (e) => {
         if (e.target.classList.contains('collab-btn-accept')) {
@@ -1253,26 +1270,45 @@ async function main() {
             });
         }
         
-        // Initialize Toggle Sidebar
-        document.getElementById('btn-toggle-sidebar')?.addEventListener('click', () => {
-            const sidebar = document.getElementById('sidebar-files');
-            const handle = document.getElementById('resize-handle-left');
-            if (!sidebar || !handle) return;
-            
-            if (sidebar.style.display === 'none') {
-                sidebar.style.display = 'flex';
-                handle.style.display = 'block';
-            } else {
-                sidebar.style.display = 'none';
-                handle.style.display = 'none';
-            }
-            if (editor) editor.layout();
-            if (monacoDiffEditor) monacoDiffEditor.layout();
+        // Initialize Left Navigation Items
+        const navItems = ['nav-item-vfs', 'nav-item-orchestrator', 'nav-item-db', 'nav-item-settings'];
+        navItems.forEach(id => {
+            document.getElementById(id)?.addEventListener('click', (e) => {
+                navItems.forEach(n => document.getElementById(n)?.classList.remove('active'));
+                document.getElementById(id)?.classList.add('active');
+                
+                const sidebar = document.getElementById('sidebar-files');
+                const canvas = document.getElementById('orchestrator-canvas');
+                const editorView = document.querySelector('.editor-container');
+                
+                if (id === 'nav-item-vfs') {
+                    sidebar.style.display = 'flex';
+                    canvas.style.display = 'none';
+                    editorView.style.display = 'block';
+                } else if (id === 'nav-item-orchestrator') {
+                    sidebar.style.display = 'none';
+                    canvas.style.display = 'block';
+                    editorView.style.display = 'none';
+                    drawConnection();
+                } else {
+                    sidebar.style.display = 'flex';
+                    canvas.style.display = 'none';
+                    editorView.style.display = 'none';
+                }
+                if (editor) editor.layout();
+            });
         });
 
-        // Initialize Collapsible Accordions
-        document.getElementById('sec-header-explorer')?.addEventListener('click', () => toggleSidebarSection('explorer'));
-        document.getElementById('sec-header-git')?.addEventListener('click', () => toggleSidebarSection('git'));
+        // Initialize Right Panel tabs
+        document.querySelectorAll('.results-pane .tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabId = btn.getAttribute('data-tab');
+                switchTab(tabId);
+            });
+        });
+
+        // Initialize Canvas Drag and Connections
+        initVisualCanvas();
 
         // Initialize Git Commit from Sidebar
         document.getElementById('git-btn-commit-sidebar')?.addEventListener('click', async () => {
@@ -1304,6 +1340,87 @@ async function main() {
     } catch (e) {
         logToTerminal(`Erreur: ${e}`, 'error-msg');
     }
+}
+
+function drawConnection() {
+    const svg = document.getElementById('canvas-svg');
+    const portOut = document.getElementById('port-trigger-out');
+    const portIn = document.getElementById('port-agent-in');
+    if (!svg || !portOut || !portIn) return;
+    
+    const rectOut = portOut.getBoundingClientRect();
+    const rectIn = portIn.getBoundingClientRect();
+    const rectCanvas = svg.getBoundingClientRect();
+    
+    const x1 = rectOut.left + rectOut.width/2 - rectCanvas.left;
+    const y1 = rectOut.top + rectOut.height/2 - rectCanvas.top;
+    const x2 = rectIn.left + rectIn.width/2 - rectCanvas.left;
+    const y2 = rectIn.top + rectIn.height/2 - rectCanvas.top;
+    
+    const dx = Math.abs(x2 - x1) * 0.5;
+    const pathData = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+    
+    let path = svg.querySelector('#connection-line');
+    if (!path) {
+        path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('id', 'connection-line');
+        path.setAttribute('stroke', '#6366f1');
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('fill', 'none');
+        svg.appendChild(path);
+    }
+    path.setAttribute('d', pathData);
+}
+
+function makeDraggable(el) {
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    const header = el.querySelector('.node-header') || el;
+    header.onmousedown = dragMouseDown;
+    
+    function dragMouseDown(e) {
+        e = e || window.event;
+        e.preventDefault();
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        document.onmouseup = closeDragElement;
+        document.onmousemove = elementDrag;
+    }
+    
+    function elementDrag(e) {
+        e = e || window.event;
+        e.preventDefault();
+        pos1 = pos3 - e.clientX;
+        pos2 = pos4 - e.clientY;
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        el.style.top = (el.offsetTop - pos2) + "px";
+        el.style.left = (el.offsetLeft - pos1) + "px";
+        drawConnection();
+    }
+    
+    function closeDragElement() {
+        document.onmouseup = null;
+        document.onmousemove = null;
+    }
+}
+
+function initVisualCanvas() {
+    const trigger = document.getElementById('node-trigger');
+    const agent = document.getElementById('node-agent');
+    if (trigger) makeDraggable(trigger);
+    if (agent) makeDraggable(agent);
+    
+    window.addEventListener('resize', drawConnection);
+    setTimeout(drawConnection, 500);
+
+    // floating canvas buttons mock
+    document.getElementById('ctrl-zoom-in')?.addEventListener('click', () => alert('Zoom In'));
+    document.getElementById('ctrl-zoom-out')?.addEventListener('click', () => alert('Zoom Out'));
+    document.getElementById('ctrl-fit')?.addEventListener('click', () => {
+        if (trigger) { trigger.style.left = '100px'; trigger.style.top = '150px'; }
+        if (agent) { agent.style.left = '350px'; agent.style.top = '250px'; }
+        drawConnection();
+    });
 }
 
 function toggleSidebarSection(sectionName) {

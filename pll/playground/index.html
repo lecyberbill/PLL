@@ -19,19 +19,32 @@
                     <select id="project-select" class="project-select">
                         <option value="">-- Projet local --</option>
                     </select>
-                    <button id="btn-save-project" class="btn btn-sm btn-secondary" title="Sauvegarder">💾</button>
-                    <button id="btn-new-project" class="btn btn-sm btn-secondary" title="Nouveau projet">+</button>
-                    <button id="btn-delete-project" class="btn btn-sm btn-danger" style="display:none">🗑</button>
                     <button id="btn-settings" class="btn btn-sm btn-secondary" title="Paramètres">⚙️ Paramètres</button>
-                    <select id="layout-select" class="project-select" style="margin-left: 8px; background: var(--bg-dark); color: var(--fg-light); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px; font-size: 13px;" title="Disposition">
+                    <select id="layout-select" class="project-select" title="Disposition">
                         <option value="right">Console à droite</option>
                         <option value="bottom">Console en bas</option>
                     </select>
-                    <button id="btn-toggle-sidebar" class="btn btn-sm btn-secondary" style="margin-left: 4px;" title="Afficher/Masquer le panneau latéral">📁</button>
                 </div>
+            </div>
+            <div class="header-actions">
+                <button id="btn-save-project" class="btn btn-sm btn-secondary" title="Sauvegarder la session"><span class="icon">📁</span></button>
+                <button id="btn-new-project" class="btn btn-sm btn-secondary" title="Nouveau projet">+</button>
+                <button id="btn-delete-project" class="btn btn-sm btn-danger" style="display:none">🗑</button>
+                <button id="btn-save-file" class="btn btn-sm btn-secondary">Enregistrer</button>
+                <button id="btn-run-code" class="btn btn-sm btn-primary">▶ Exécuter</button>
             </div>
         </header>
         <main class="workspace">
+            <!-- Thin left sidebar navigation -->
+            <nav class="left-nav">
+                <div class="left-nav-item active" id="nav-item-vfs" title="Explorateur de fichiers">📁</div>
+                <div class="left-nav-item" id="nav-item-orchestrator" title="Graphe d'Orchestration">🌿</div>
+                <div class="left-nav-item" id="nav-item-db" title="Base de données">📦</div>
+                <div class="left-nav-item" id="nav-item-settings" title="Configuration">⚙️</div>
+                <div class="left-nav-item-bottom" id="nav-item-profile" title="Profil">👤</div>
+                <div class="left-nav-item-bottom" id="nav-item-global-settings" title="Paramètres Généraux">⚙️</div>
+            </nav>
+
             <aside class="pane sidebar-pane" id="sidebar-files" style="width: 250px;">
                 <div class="pane-header" style="padding: 4px 8px;">
                     <div class="sidebar-tabs" style="display: flex; gap: 8px;">
@@ -74,260 +87,203 @@
             <div class="resize-handle" id="resize-handle-left"></div>
             
             <div class="editor-results-container" id="editor-results-container" style="display: flex; flex: 1; flex-direction: row; min-width: 0; height: 100%;">
-                <section class="pane editor-pane" style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+                <!-- Central Canvas Workspace -->
+                <section class="pane main-workspace-pane" style="flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative;">
                     <div class="pane-header">
-                        <div class="editor-tabs-bar" id="editor-tabs-bar"></div>
-                        <div style="display: flex; align-items: center; gap: 12px;">
-                            <div class="editor-status" id="typecheck-status">
-                                <span class="status-indicator success"></span> Prêt
-                            </div>
-                            <button id="btn-save-file" class="btn btn-sm btn-secondary" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px;" title="Sauvegarder le fichier actuel (Ctrl+S)">
-                                💾 Enregistrer
-                            </button>
-                            <button id="btn-run-code" class="btn btn-sm btn-primary" style="display: flex; align-items: center; gap: 4px; padding: 4px 10px;" title="Exécuter le fichier PLL actuel">
-                                ▶ Exécuter
-                            </button>
+                        <div class="editor-tabs-bar" id="editor-tabs-bar">
+                            <div class="editor-tab active">🌿 logic_flow.agent <span class="close-tab-btn">✕</span></div>
+                            <div class="editor-tab">📄 orchestrator.js <span class="close-tab-btn">✕</span></div>
+                        </div>
+                        <div class="editor-status" id="typecheck-status">
+                            <span class="status-indicator success"></span> Prêt
                         </div>
                     </div>
-                    <div class="editor-container" style="flex: 1; position: relative;">
+                    
+                    <!-- Orchestrator visual flow editor canvas (default view) -->
+                    <div class="orchestrator-canvas-view" id="orchestrator-canvas">
+                        <svg class="canvas-svg-layer" id="canvas-svg"></svg>
+                        
+                        <!-- Input Trigger Node -->
+                        <div class="flow-node flow-node-trigger" style="left: 100px; top: 150px;" id="node-trigger">
+                            <div class="node-header">
+                                <span class="node-indicator"></span>
+                                <span class="node-title">Input Trigger</span>
+                                <span class="node-menu">⋮⋮</span>
+                            </div>
+                            <div class="node-body">
+                                <div class="node-field">
+                                    <label>Source</label>
+                                    <div class="field-val">HTTP Request Hook</div>
+                                </div>
+                            </div>
+                            <div class="node-port port-output" id="port-trigger-out"></div>
+                        </div>
+
+                        <!-- Analysis Agent Node -->
+                        <div class="flow-node flow-node-agent" style="left: 350px; top: 250px;" id="node-agent">
+                            <div class="node-header">
+                                <span class="node-indicator"></span>
+                                <span class="node-title">Analysis Agent</span>
+                                <span class="node-menu">⋮⋮</span>
+                            </div>
+                            <div class="node-body">
+                                <div class="node-field">
+                                    <label>Model</label>
+                                    <div class="field-val">GPT-4o Complex Analysis</div>
+                                </div>
+                                <div class="node-field">
+                                    <label>Prompt</label>
+                                    <div class="field-val">"Analyze the intent of..."</div>
+                                </div>
+                            </div>
+                            <div class="node-port port-input" id="port-agent-in"></div>
+                            <div class="node-port port-output" id="port-agent-out"></div>
+                        </div>
+
+                        <!-- Floating Canvas controls -->
+                        <div class="canvas-controls">
+                            <button id="ctrl-pan" class="ctrl-btn" title="Navigation">⌖</button>
+                            <button id="ctrl-add" class="ctrl-btn" title="Ajouter un nœud">+</button>
+                            <span class="ctrl-separator">|</span>
+                            <button id="ctrl-zoom-in" class="ctrl-btn">🔍+</button>
+                            <button id="ctrl-zoom-out" class="ctrl-btn">🔍-</button>
+                            <button id="ctrl-fit" class="ctrl-btn" title="Centrer le graphe">⛶</button>
+                        </div>
+                    </div>
+
+                    <!-- Code text editor view (hidden by default) -->
+                    <div class="editor-container" style="flex: 1; position: relative; display: none;">
                         <div id="monaco-editor" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;"></div>
                     </div>
-                    <div class="editor-lang-badge" id="editor-lang-badge">python</div>
                 </section>
                 
                 <div class="resize-handle" id="resize-handle"></div>
                 
-                <section class="pane results-pane" style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
-                <div class="pane-header">
-                    <div class="tabs-list">
-                        <button class="tab-btn active" data-tab="tab-agentic">Agent 🤖</button>
-                        <button class="tab-btn" data-tab="tab-terminal">Console</button>
-                        <button class="tab-btn" id="tab-btn-gca" data-tab="tab-gca">GCA</button>
-                        <button class="tab-btn" data-tab="tab-packages">Paquets</button>
-                        <button class="tab-btn" data-tab="tab-conversations">Historique</button>
+                <!-- Right developmental agent panel -->
+                <section class="pane results-pane" style="width: 450px; display: flex; flex-direction: column;">
+                    <div class="pane-header" style="justify-content: space-between;">
+                        <div class="agent-title-bar">
+                            <span class="agent-avatar">🤖</span>
+                            <h3>Agent de Développement</h3>
+                        </div>
+                        <div class="agent-actions">
+                            <button id="btn-agentic-refresh" class="agent-act-btn" title="Rafraîchir">↻</button>
+                            <button id="btn-agentic-fullscreen" class="agent-act-btn" title="Plein écran">⛶</button>
+                        </div>
                     </div>
-                </div>
-                <div class="tab-content active" id="tab-agentic">
-                    <div class="agentic-panel">
-                        <div class="agentic-header" style="flex-wrap: wrap;">
-                            <h3>Agent de Développement 🤖</h3>
-                            <div class="agentic-controls" style="display: flex; gap: 8px; align-items: center;">
-                                <div id="agentic-tabs" class="agentic-tabs" style="display: flex; gap: 2px; overflow-x: auto; max-width: 300px;"></div>
-                                <button id="btn-agentic-new-tab" class="btn btn-sm btn-secondary" title="Nouvel onglet">➕</button>
-                                <select id="agentic-session-select" class="btn btn-sm btn-secondary" style="display:none;background: var(--bg-dark); color: var(--fg-light); border: 1px solid var(--border-color); cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 13px; max-width: 250px;">
-                                    <option value="">-- Aucune session --</option>
-                                </select>
-                                <button id="btn-agentic-clear" class="btn btn-sm btn-secondary">Effacer</button>
+
+                    <div class="tabs-list" style="padding: 0 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-dark);">
+                        <button class="tab-btn active" data-tab="tab-agentic">Conversation</button>
+                        <button class="tab-btn" data-tab="tab-variables">Variables</button>
+                        <button class="tab-btn" data-tab="tab-terminal">Logs</button>
+                    </div>
+
+                    <div class="tab-content active" id="tab-agentic" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                        <div class="agentic-conversation" id="agentic-conversation" style="flex: 1; overflow-y: auto; padding: 16px;">
+                            <div class="chat-bubble bubble-agent">
+                                <div class="bubble-sender">AGENT <span class="time">12:44</span></div>
+                                <div class="bubble-content">Bonjour. Le graphe d'orchestration est initialisé. Je peux vous aider à connecter une nouvelle source de données ou à configurer les déclencheurs. Que souhaitez-vous faire ?</div>
+                            </div>
+                            <div class="chat-bubble bubble-user">
+                                <div class="bubble-sender"><span class="time">12:45</span> VOUS</div>
+                                <div class="bubble-content">Ajoute un nœud de validation après l'Input Trigger.</div>
+                            </div>
+                            <div class="chat-bubble bubble-agent typing-indicator">
+                                <div class="bubble-sender">AGENT</div>
+                                <div class="bubble-content">
+                                    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                                </div>
                             </div>
                         </div>
-                        <div class="agentic-conversation" id="agentic-conversation">
-                            <div class="sys-msg">Posez une question à l'agent ou demandez-lui de coder une fonctionnalité.</div>
+
+                        <!-- Bottom suggestions & quick action chips -->
+                        <div class="suggestions-row">
+                            <button class="suggest-chip">Suggérer un test</button>
+                            <button class="suggest-chip">Expliquer le code</button>
                         </div>
+
                         <div class="agentic-input-bar">
-                            <textarea id="agentic-input" rows="4" placeholder="Ex: Ajoute un bouton pause au jeu de snake..."></textarea>
-                            <button id="btn-agentic-send" class="btn btn-primary">Envoyer</button>
-                            <button id="btn-agentic-stop" class="btn btn-sm btn-danger" style="display:none" title="Arrêter l'agent">⬛ Stop</button>
-                        </div>
-                    </div>
-                </div>
-                <div class="tab-content" id="tab-terminal">
-                    <div class="terminal-panel">
-                        <div class="terminal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.15);">
-                            <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">CONSOLE & SHELL</span>
-                            <button id="btn-terminal-clear" class="btn btn-sm btn-secondary" style="padding: 2px 8px; font-size: 10px;" title="Effacer la console">🗑️</button>
-                        </div>
-                        <div class="terminal-output" id="terminal-log">
-                            <div class="sys-msg">Console PLL prête. Tapez une commande ci-dessous.</div>
-                        </div>
-                        <div class="terminal-input-bar">
-                            <span class="terminal-prompt">❯</span>
-                            <input type="text" id="terminal-input" placeholder="Commande shell..." spellcheck="false" autocomplete="off">
-                        </div>
-                    </div>
-                </div>
-                <div class="tab-content" id="tab-gca" style="height: 100%; overflow: hidden; padding: 0;">
-                    <div class="gca-panel" style="display: flex; flex-direction: column; height: 100%;">
-                        <div class="gca-header" style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid var(--border-color);">
-                            <h3>Architecture GCA (Multi-Agent) 👥</h3>
-                            <div class="gca-actions" style="display: flex; gap: 6px;">
-                                <button id="btn-gca-init" class="btn btn-sm btn-secondary">Init Cycle</button>
-                                <button id="btn-gca-checkpoint" class="btn btn-sm btn-secondary">Checkpoint</button>
-                                <button id="btn-gca-handoff" class="btn btn-sm btn-secondary">Handoff →</button>
+                            <textarea id="agentic-input" rows="3" placeholder="Ex: Ajoute un bouton pause au jeu de snake..."></textarea>
+                            <div class="input-actions-row">
+                                <button class="action-btn" title="Joindre un fichier">📎</button>
+                                <button class="action-btn" title="Ajouter une image">📷</button>
+                                <button class="action-btn" title="Message vocal">🎙️</button>
+                                <button id="btn-agentic-send" class="btn btn-primary btn-send">➔</button>
                             </div>
                         </div>
-                        <div id="gca-status" style="padding: 8px; border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.15); font-size: 12px;"></div>
-                        
-                        <div class="gca-comparison-dashboard" style="flex: 1; display: flex; overflow: hidden; min-height: 0;">
-                            <div class="gca-column" style="flex: 1; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; overflow: hidden;">
-                                <div class="gca-column-header" style="padding: 6px; background: rgba(0,0,0,0.1); border-bottom: 1px solid var(--border-color); font-weight: bold; font-size: 11px; color: var(--accent); text-align: center;">
-                                    PRIMARY AGENT
-                                </div>
-                                <div class="gca-graph-wrapper" id="gca-primary-graph" style="flex: 1; overflow-y: auto; padding: 12px;">
-                                    <div class="sys-msg">Aucun graphe d'agent primaire.</div>
-                                </div>
+                    </div>
+
+                    <div class="tab-content" id="tab-variables" style="display: none; padding: 16px; overflow-y: auto;">
+                        <div class="variables-panel" id="variables-list">
+                            <div class="sys-msg">Aucune variable active.</div>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="tab-terminal" style="display: none; display: flex; flex-direction: column; overflow: hidden; height: 100%;">
+                        <div class="terminal-panel" style="flex: 1; display: flex; flex-direction: column;">
+                            <div class="terminal-output" id="terminal-log" style="flex: 1; overflow-y: auto; padding: 12px;">
+                                <div class="sys-msg">Console PLL prête. Tapez une commande ci-dessous.</div>
                             </div>
-                            <div class="gca-column" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
-                                <div class="gca-column-header" style="padding: 6px; background: rgba(0,0,0,0.1); border-bottom: 1px solid var(--border-color); font-weight: bold; font-size: 11px; color: var(--warning); text-align: center;">
-                                    SHADOW AGENT
-                                </div>
-                                <div class="gca-graph-wrapper" id="gca-shadow-graph" style="flex: 1; overflow-y: auto; padding: 12px;">
-                                    <div class="sys-msg">Aucun graphe d'agent ombre.</div>
-                                </div>
+                            <div class="terminal-input-bar">
+                                <span class="terminal-prompt">❯</span>
+                                <input type="text" id="terminal-input" placeholder="Commande shell..." spellcheck="false" autocomplete="off">
                             </div>
                         </div>
-                        <div id="gca-vault" style="max-height: 120px; overflow-y: auto; border-top: 1px solid var(--border-color); padding: 8px; background: rgba(0,0,0,0.05);"></div>
                     </div>
-                </div>
-                <div class="tab-content" id="tab-packages">
-                    <div class="packages-panel">
-                        <div class="packages-header">
-                            <h3>Paquets</h3>
-                            <button id="btn-refresh-packages" class="btn btn-sm btn-secondary">↻</button>
-                        </div>
-                        <div id="packages-list"></div>
-                    </div>
-                </div>
-                <div class="tab-content" id="tab-conversations">
-                    <div class="conv-panel">
-                        <div class="conv-header">
-                            <h3>Conversations</h3>
-                            <button id="btn-refresh-conv" class="btn btn-sm btn-secondary">↻</button>
-                        </div>
-                        <div class="conv-list" id="conv-list"></div>
-                    </div>
-                </div>
-                </div>
+                </section>
             </div>
         </main>
-        <div id="git-status-bar" title="Cliquer pour debug">
-            <span id="git-branch">⎇ —</span>
-            <span id="git-changes"></span>
-            <span id="git-remote"></span>
-            <button id="git-diff-btn" class="btn btn-sm btn-secondary" title="Voir le diff" style="margin-left:auto;font-size:10px;padding:2px 6px;">📊 Diff</button>
-            <span id="git-debug" style="display:none;font-size:10px;color:var(--text-muted);"></span>
+        <div id="git-status-bar">
+            <span id="git-branch">⎇ main*</span>
+            <span id="git-changes">UTF-8</span>
+            <span id="git-remote">Spaces: 2</span>
+            <span id="git-agent-status">Agent Workspace: Active</span>
         </div>
     </div>
-    <div class="modal" id="vfs-modal">
-        <div class="modal-content">
-            <h2>Nouveau fichier</h2>
-            <input type="text" id="modal-file-path" placeholder="mon_fichier.py">
-            <textarea id="modal-file-content" placeholder="Contenu..."></textarea>
-            <div class="modal-actions">
-                <button id="modal-cancel" class="btn btn-secondary">Annuler</button>
-                <button id="modal-save" class="btn btn-primary">Enregistrer</button>
-            </div>
-        </div>
-    </div>
+
+    <!-- Modals & Drawers -->
     <div class="modal" id="settings-modal">
         <div class="modal-content">
-            <h2>Paramètres de l'Agent & Sessions</h2>
+            <h2>Paramètres</h2>
             <div class="form-group">
-                <label>Modèle de Langue / Backend</label>
-                <select id="settings-backend" class="project-select" style="width: 100%; display: block; margin-top: 4px;">
+                <label>Backend Agent</label>
+                <select id="settings-backend" class="project-select">
                     <option value="auto">Auto (Conseillé)</option>
                     <option value="deepseek">DeepSeek</option>
                     <option value="lmstudio">LM Studio (Local)</option>
                 </select>
             </div>
-            <div class="form-group" style="margin-top: 18px;">
-                <label>Session active</label>
-                <div style="display: flex; gap: 8px; margin-top: 4px;">
-                    <select id="settings-session-select" class="project-select" style="flex: 1; min-width: 0;">
-                        <option value="">-- Aucune session --</option>
-                    </select>
-                    <button id="btn-new-session" class="btn btn-primary">Nouvelle</button>
-                </div>
-                <small style="color: var(--text-muted); margin-top: 6px; display: block; line-height: 1.4;">
-                    Les sessions fragmentent votre historique de conversation. Si le contexte devient trop lourd ou commence à faire des erreurs, créez une nouvelle session !
-                </small>
-            </div>
-            <div class="form-group" style="margin-top: 18px;">
-                <label style="display: flex; align-items: center; gap: 8px; font-weight: 500; cursor: pointer; user-select: none;">
-                    <input type="checkbox" id="settings-enable-gca" style="width: auto; margin: 0;"> Activer l'architecture GCA (Primaire/Ombre)
-                </label>
-            </div>
-            <div class="modal-actions" style="margin-top: 24px;">
+            <div class="modal-actions">
                 <button id="btn-settings-close" class="btn btn-secondary">Fermer</button>
             </div>
         </div>
     </div>
-    <div class="modal" id="project-modal">
-        <div class="modal-content">
-            <h2 id="project-modal-title">Nouveau Projet</h2>
-            <div class="form-group">
-                <label>Nom du projet</label>
-                <input type="text" id="modal-project-name" placeholder="mon-projet">
-            </div>
-            <div class="form-group">
-                <label>Description</label>
-                <textarea id="modal-project-desc" placeholder="Que va faire ce projet ?" rows="2"></textarea>
-            </div>
-            <div class="form-group">
-                <label>Template</label>
-                <div class="template-chips" id="template-chips">
-                    <div class="template-chip active" data-tpl="empty">🧩 Vide</div>
-                    <div class="template-chip" data-tpl="flask">🐍 Flask API</div>
-                    <div class="template-chip" data-tpl="cli">⚙️ CLI Tool</div>
-                    <div class="template-chip" data-tpl="pll">🔷 PLL</div>
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Chemin disque (optionnel — laisse vide pour mode DB)</label>
-                <input type="text" id="modal-project-path" placeholder="C:\dev\mon-projet">
-            </div>
-            <div class="modal-actions">
-                <button id="project-modal-cancel" class="btn btn-secondary">Annuler</button>
-                <button id="project-modal-save" class="btn btn-primary">Créer</button>
-            </div>
-        </div>
-    </div>
-    <div class="modal" id="diff-modal">
-        <div class="modal-content" style="max-width: 950px; width: 90vw; max-height: 85vh; display: flex; flex-direction: column;">
-            <h2 style="display: flex; justify-content: space-between; align-items: center; margin-top: 0;">
-                <span>📊 Git Diff</span>
-                <span id="diff-badge" style="font-size: 12px; color: var(--text-muted);"></span>
-            </h2>
-            <div class="diff-actions" style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center;">
-                <button id="diff-btn-all" class="btn btn-sm btn-secondary">Tout</button>
-                <button id="diff-btn-staged" class="btn btn-sm btn-secondary">Staged</button>
-                <select id="diff-files-dropdown" style="background: var(--bg-dark); color: var(--fg-light); border: 1px solid var(--border-color); padding: 4px 8px; border-radius: 4px; font-size: 13px; outline: none; display: none; max-width: 300px;"></select>
-                <button id="diff-btn-close" class="btn btn-sm btn-secondary" style="margin-left: auto;">Fermer</button>
-            </div>
-            <div id="monaco-diff-container" style="flex: 1; min-height: 380px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; display: none; margin-bottom: 12px;"></div>
-            <pre id="diff-content" style="flex: 1; overflow: auto; background: rgba(0,0,0,0.3); padding: 12px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; margin: 0;"></pre>
-            <div class="git-commit-bar" style="display: flex; gap: 8px; margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 12px; align-items: center;">
-                <input type="text" id="git-commit-msg" placeholder="Message de commit (laisser vide pour générer par l'Agent)..." style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px; outline: none;">
-                <button id="git-btn-commit" class="btn btn-primary" style="padding: 8px 16px;">💾 Commit</button>
-            </div>
-        </div>
-    </div>
-    
+
     <!-- Slide-out Node Inspector Drawer -->
-    <div class="drawer" id="agent-details-drawer" style="position: fixed; top: 0; right: -400px; width: 400px; height: 100%; background: var(--bg-secondary); border-left: 1px solid var(--border-color); z-index: 2000; box-shadow: -5px 0 25px rgba(0,0,0,0.5); display: flex; flex-direction: column; transition: right 0.3s ease; backdrop-filter: blur(15px);">
-        <div class="drawer-header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.15);">
+    <div class="drawer" id="agent-details-drawer">
+        <div class="drawer-header">
             <h3 style="margin: 0; font-size: 14px; display: flex; align-items: center; gap: 8px;">
                 <span id="drawer-icon">📖</span>
                 <span id="drawer-tool-name">Détails de l'étape</span>
             </h3>
-            <button id="btn-drawer-close" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; outline: none;">✕</button>
+            <button id="btn-drawer-close">✕</button>
         </div>
-        <div class="drawer-body" style="padding: 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1;">
+        <div class="drawer-body">
             <div class="drawer-section">
-                <label style="font-size: 10px; font-weight: bold; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Thoughts / Raisonnement</label>
-                <div id="drawer-thinking" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.5; white-space: pre-wrap; margin-top: 4px;"></div>
+                <label>Thoughts / Raisonnement</label>
+                <div id="drawer-thinking"></div>
             </div>
             <div class="drawer-section">
-                <label style="font-size: 10px; font-weight: bold; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Arguments de l'outil</label>
-                <div id="drawer-args" style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: var(--radius-sm); margin-top: 4px; overflow: hidden;">
-                    <pre style="margin: 0; padding: 10px; font-size: 12px; font-family: var(--font-mono); overflow: auto; white-space: pre-wrap;"></pre>
-                </div>
+                <label>Arguments</label>
+                <pre id="drawer-args"></pre>
             </div>
             <div class="drawer-section">
-                <label style="font-size: 10px; font-weight: bold; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Résultat / Sortie</label>
-                <div id="drawer-result" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-x: auto; margin-top: 4px; max-height: 250px;"></div>
+                <label>Sortie</label>
+                <div id="drawer-result"></div>
             </div>
         </div>
     </div>
+
     <script type="module" src="index.js"></script>
 </body>
 </html>
