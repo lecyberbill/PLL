@@ -1,24 +1,23 @@
 @echo off
-chcp 65001 >nul
 title PLL Agentic IDE Launcher
 echo ===============================================
-echo      LANCEUR PLL AGENTIC IDE (MODE DEV)
+echo      LAUNCHER PLL AGENTIC IDE (DEV MODE)
 echo ===============================================
 echo.
 
-:: 1. Démarrer le serveur backend FastAPI en tâche de fond (minimisé)
-echo [..] Démarrage du serveur backend (FastAPI)...
+REM 1. Start FastAPI backend server in background
+echo [..] Starting backend server (FastAPI)...
 start "PLL Backend Server" /min cmd /c "call serveur.bat"
 
-:: 2. Attendre 2 secondes pour laisser le serveur s'initialiser
+REM 2. Wait 2 seconds for server initialization
 timeout /t 2 /nobreak >nul
 
-:: 3. Démarrer l'application de bureau Tauri
-echo [..] Démarrage de l'application de bureau Tauri...
+REM 3. Start Tauri desktop application
+echo [..] Starting Tauri desktop application...
 call npx @tauri-apps/cli dev
 
 echo.
 echo ===============================================
-echo   IDE arrêté. Fermeture du lanceur.
+echo   IDE stopped. Closing launcher.
 echo ===============================================
 pause
