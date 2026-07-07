@@ -1852,7 +1852,7 @@ const gitStatusBar = document.getElementById('git-status-bar');
 if (gitStatusBar) {
     gitStatusBar.addEventListener('click', (e) => {
         if (e.target.tagName === 'BUTTON') return; // don't toggle on button clicks
-        elGitDebug.style.display = elGitDebug.style.display === 'none' ? 'inline' : 'none';
+        if (elGitDebug) elGitDebug.style.display = elGitDebug.style.display === 'none' ? 'inline' : 'none';
     });
 }
 
@@ -2002,7 +2002,7 @@ switchTab = function(tabId) {
     if (tabId === 'tab-conversations') loadConversations();
 };
 
-elBtnRefreshConv.addEventListener('click', loadConversations);
+elBtnRefreshConv?.addEventListener('click', loadConversations);
 
 // Tab switching
 document.querySelectorAll('.tab-btn').forEach(btn => {
