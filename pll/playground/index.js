@@ -1277,6 +1277,12 @@ async function main() {
             });
         });
 
+        // Fullscreen toggle event listener
+        document.getElementById('btn-agentic-fullscreen')?.addEventListener('click', () => {
+            document.querySelector('.results-pane')?.classList.toggle('fullscreen');
+            if (editor) editor.layout();
+        });
+
         // 5. Initialize Canvas Drag and Connections
         initVisualCanvas();
 
@@ -1722,14 +1728,24 @@ if (elTerminalInput) {
     });
 }
 
+function logToExecutionLogs(msg, className = '') {
+    const elExecutionLogs = document.getElementById('execution-logs');
+    if (!elExecutionLogs) return;
+    const div = document.createElement('div');
+    div.className = className;
+    div.textContent = msg;
+    elExecutionLogs.appendChild(div);
+    elExecutionLogs.scrollTop = elExecutionLogs.scrollHeight;
+}
+
 async function runPllCode() {
     const code = editor.getValue();
     if (!code) {
-        logToTerminal("Erreur : Aucun code à exécuter.", "stderr");
+        logToExecutionLogs("Erreur : Aucun code à exécuter.", "stderr");
         return;
     }
-    switchTab('tab-terminal');
-    logToTerminal(`❯ pll run ${activeFile || 'main.pll'}`, "cmd");
+    switchTab('tab-logs');
+    logToExecutionLogs(`❯ pll run ${activeFile || 'main.pll'}`, "cmd");
     try {
         const resp = await fetch('/api/pll/exec', {
             method: 'POST',
@@ -1738,14 +1754,14 @@ async function runPllCode() {
         });
         const result = await resp.json();
         if (result.output) {
-            logToTerminal(result.output, "stdout");
+            logToExecutionLogs(result.output, "stdout");
         }
         if (result.error) {
-            logToTerminal(result.error, "stderr");
+            logToExecutionLogs(result.error, "stderr");
         }
-        logToTerminal(`Process finished: ${result.ok ? 'SUCCESS' : 'FAILED'}`, result.ok ? 'exit-ok' : 'exit-err');
+        logToExecutionLogs(`Process finished: ${result.ok ? 'SUCCESS' : 'FAILED'}`, result.ok ? 'exit-ok' : 'exit-err');
     } catch (e) {
-        logToTerminal(`Erreur lors de l'exécution: ${e.message}`, "stderr");
+        logToExecutionLogs(`Erreur lors de l'exécution: ${e.message}`, "stderr");
     }
 }
 
@@ -2076,7 +2092,7 @@ function switchTab(tabId) {
     const content = document.getElementById(tabId);
     if (content) {
         content.classList.add('active');
-        content.style.display = (tabId === 'tab-agentic' || tabId === 'tab-terminal') ? 'flex' : 'block';
+        content.style.display = (tabId === 'tab-agentic' || tabId === 'tab-shell' || tabId === 'tab-logs') ? 'flex' : 'block';
     }
     if (tabId === 'tab-conversations' || tabId === 'tab-agentic') loadConversations();
 }
