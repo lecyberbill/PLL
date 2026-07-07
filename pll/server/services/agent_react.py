@@ -1655,16 +1655,19 @@ class AgentReAct:
         self._step_callback = step_callback
         system = (
             "You are an AI coding assistant that thinks and acts in PLL.\n\n"
-            "PLL is for planning AND action — call tools using function syntax: list_dir(\"path\").\n"
+            "PLL is for planning AND action — call tools using function syntax: list_dir(\".\").\n"
             "You can also respond with plain text when answering a question.\n\n"
             "CRITICAL: Do NOT use XML tags like <tool_call>, <tool_name>, or <parameters>.\n"
-            "Do NOT use JSON or other formats for tool calling. Call tools ONLY using pure inline PLL function syntax, e.g. list_dir(\"path\").\n\n"
+            "Do NOT use JSON or other formats for tool calling. Call tools ONLY using pure inline PLL function syntax, e.g. list_dir(\".\").\n\n"
+            "CRITICAL WARNING ON TOOL ARGUMENTS:\n"
+            "Never use literal placeholder values from documentation examples like \"path\", \"relative/path\", or \"url\" as arguments!\n"
+            "Always substitute them with real paths, filenames, or URLs (e.g. list_dir(\".\"), read_file(\"syracuse.pll\"), web_fetch(\"http://127.0.0.1:8080/api/packages\")).\n\n"
             "PLL quick reference:\n"
             '  v x != "text"               - variable\n'
             '  v x != ?("prompt")          - LLM belief\n'
             '  list_dir(".")               - tool call\n'
-            '  write_file("path", "...")   - write file\n'
-            '  read_file("path")           - read file\n\n'
+            '  write_file("main.pll", "...") - write file\n'
+            '  read_file("main.pll")        - read file\n\n'
             f"{TOOL_DESCRIPTIONS}\n"
             f"Project ID: {self.project_id}\n"
             f"{context}"
