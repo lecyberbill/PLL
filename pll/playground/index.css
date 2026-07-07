@@ -388,3 +388,47 @@ code { background: rgba(0,0,0,0.15); padding: 1px 4px; border-radius: 2px; }
 .git-commit-bar-sidebar input:focus {
     border-color: var(--accent);
 }
+
+/* Slide-out Inspector Drawer styles */
+.drawer {
+    backdrop-filter: blur(15px) !important;
+    background: rgba(26, 26, 46, 0.7) !important;
+}
+.drawer-header {
+    border-bottom: 1px solid var(--border-color);
+}
+.drawer-body::-webkit-scrollbar {
+    width: 6px;
+}
+.drawer-body::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.08);
+    border-radius: 3px;
+}
+.drawer-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.15);
+}
+
+/* GCA Side-by-Side Dashboard styles */
+.gca-comparison-dashboard {
+    background: rgba(0, 0, 0, 0.1);
+}
+.gca-column {
+    background: rgba(255, 255, 255, 0.01);
+}
+.gca-graph-wrapper::-webkit-scrollbar {
+    width: 6px;
+}
+.gca-graph-wrapper::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.08);
+    border-radius: 3px;
+}
+.gca-graph-wrapper .agent-node {
+    margin: 8px auto;
+    max-width: 95%;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.gca-graph-wrapper .agent-node:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(124, 92, 252, 0.2);
+    border-color: var(--accent);
+}

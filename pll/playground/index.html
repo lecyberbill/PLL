@@ -145,18 +145,37 @@
                         </div>
                     </div>
                 </div>
-                <div class="tab-content" id="tab-gca">
-                    <div class="gca-panel">
-                        <div class="gca-header">
-                            <h3>GCA</h3>
-                            <div class="gca-actions">
+                <div class="tab-content" id="tab-gca" style="height: 100%; overflow: hidden; padding: 0;">
+                    <div class="gca-panel" style="display: flex; flex-direction: column; height: 100%;">
+                        <div class="gca-header" style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid var(--border-color);">
+                            <h3>Architecture GCA (Multi-Agent) 👥</h3>
+                            <div class="gca-actions" style="display: flex; gap: 6px;">
                                 <button id="btn-gca-init" class="btn btn-sm btn-secondary">Init Cycle</button>
                                 <button id="btn-gca-checkpoint" class="btn btn-sm btn-secondary">Checkpoint</button>
                                 <button id="btn-gca-handoff" class="btn btn-sm btn-secondary">Handoff →</button>
                             </div>
                         </div>
-                        <div id="gca-status"></div>
-                        <div id="gca-vault"></div>
+                        <div id="gca-status" style="padding: 8px; border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.15); font-size: 12px;"></div>
+                        
+                        <div class="gca-comparison-dashboard" style="flex: 1; display: flex; overflow: hidden; min-height: 0;">
+                            <div class="gca-column" style="flex: 1; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; overflow: hidden;">
+                                <div class="gca-column-header" style="padding: 6px; background: rgba(0,0,0,0.1); border-bottom: 1px solid var(--border-color); font-weight: bold; font-size: 11px; color: var(--accent); text-align: center;">
+                                    PRIMARY AGENT
+                                </div>
+                                <div class="gca-graph-wrapper" id="gca-primary-graph" style="flex: 1; overflow-y: auto; padding: 12px;">
+                                    <div class="sys-msg">Aucun graphe d'agent primaire.</div>
+                                </div>
+                            </div>
+                            <div class="gca-column" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                                <div class="gca-column-header" style="padding: 6px; background: rgba(0,0,0,0.1); border-bottom: 1px solid var(--border-color); font-weight: bold; font-size: 11px; color: var(--warning); text-align: center;">
+                                    SHADOW AGENT
+                                </div>
+                                <div class="gca-graph-wrapper" id="gca-shadow-graph" style="flex: 1; overflow-y: auto; padding: 12px;">
+                                    <div class="sys-msg">Aucun graphe d'agent ombre.</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="gca-vault" style="max-height: 120px; overflow-y: auto; border-top: 1px solid var(--border-color); padding: 8px; background: rgba(0,0,0,0.05);"></div>
                     </div>
                 </div>
                 <div class="tab-content" id="tab-packages">
@@ -279,6 +298,33 @@
             <div class="git-commit-bar" style="display: flex; gap: 8px; margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 12px; align-items: center;">
                 <input type="text" id="git-commit-msg" placeholder="Message de commit (laisser vide pour générer par l'Agent)..." style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px; outline: none;">
                 <button id="git-btn-commit" class="btn btn-primary" style="padding: 8px 16px;">💾 Commit</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Slide-out Node Inspector Drawer -->
+    <div class="drawer" id="agent-details-drawer" style="position: fixed; top: 0; right: -400px; width: 400px; height: 100%; background: var(--bg-secondary); border-left: 1px solid var(--border-color); z-index: 2000; box-shadow: -5px 0 25px rgba(0,0,0,0.5); display: flex; flex-direction: column; transition: right 0.3s ease; backdrop-filter: blur(15px);">
+        <div class="drawer-header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.15);">
+            <h3 style="margin: 0; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                <span id="drawer-icon">📖</span>
+                <span id="drawer-tool-name">Détails de l'étape</span>
+            </h3>
+            <button id="btn-drawer-close" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; outline: none;">✕</button>
+        </div>
+        <div class="drawer-body" style="padding: 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1;">
+            <div class="drawer-section">
+                <label style="font-size: 10px; font-weight: bold; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Thoughts / Raisonnement</label>
+                <div id="drawer-thinking" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.5; white-space: pre-wrap; margin-top: 4px;"></div>
+            </div>
+            <div class="drawer-section">
+                <label style="font-size: 10px; font-weight: bold; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Arguments de l'outil</label>
+                <div id="drawer-args" style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: var(--radius-sm); margin-top: 4px; overflow: hidden;">
+                    <pre style="margin: 0; padding: 10px; font-size: 12px; font-family: var(--font-mono); overflow: auto; white-space: pre-wrap;"></pre>
+                </div>
+            </div>
+            <div class="drawer-section">
+                <label style="font-size: 10px; font-weight: bold; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Résultat / Sortie</label>
+                <div id="drawer-result" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-x: auto; margin-top: 4px; max-height: 250px;"></div>
             </div>
         </div>
     </div>

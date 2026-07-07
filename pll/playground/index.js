@@ -622,6 +622,7 @@ function renderStepsGraph(steps) {
         
         const node = document.createElement('div');
         node.className = 'agent-node active';
+        node.style.cursor = 'pointer';
         
         let details = '';
         if (step.result) {
@@ -635,6 +636,14 @@ function renderStepsGraph(steps) {
             <span class="agent-node-details">${escHtml(details)}</span>
             <span class="agent-node-status ${isErr ? 'error' : 'success'}">${isErr ? 'Erreur' : 'Succès'}</span>
         `;
+        node.stepData = {
+            tool: step.tool,
+            icon: icon,
+            args: step.args,
+            result: step.result,
+            thinking: step.thinking || ''
+        };
+        node.onclick = () => openNodeDetailsDrawer(node.stepData);
         graphContainer.appendChild(node);
     });
 }
@@ -1003,6 +1012,7 @@ async function sendAgenticMessage() {
 
                             const node = document.createElement('div');
                             node.className = 'agent-node active';
+                            node.style.cursor = 'pointer';
 
                             let details = '';
                             if (ev.result) {
@@ -1016,6 +1026,14 @@ async function sendAgenticMessage() {
                                 <span class="agent-node-details">${escHtml(details)}</span>
                                 <span class="agent-node-status ${isErr ? 'error' : 'success'}">${isErr ? 'Erreur' : 'Succès'}</span>
                             `;
+                            node.stepData = {
+                                tool: ev.tool,
+                                icon: icon,
+                                args: ev.args,
+                                result: ev.result,
+                                thinking: ev.thinking || answer || ''
+                            };
+                            node.onclick = () => openNodeDetailsDrawer(node.stepData);
                             graphContainer.appendChild(node);
                             elAgenticConversation.scrollTop = elAgenticConversation.scrollHeight;
                         } else if (ev.type === 'explanation') {
@@ -1306,24 +1324,133 @@ function toggleSidebarSection(sectionName) {
     }
 }
 
+function openNodeDetailsDrawer(stepData) {
+    const drawer = document.getElementById('agent-details-drawer');
+    if (!drawer) return;
+    
+    document.getElementById('drawer-icon').textContent = stepData.icon || '📖';
+    document.getElementById('drawer-tool-name').textContent = stepData.tool || 'Action';
+    document.getElementById('drawer-thinking').textContent = stepData.thinking || 'Aucun thought disponible.';
+    
+    const argsEl = document.querySelector('#drawer-args pre');
+    if (argsEl) {
+        if (typeof stepData.args === 'object') {
+            argsEl.textContent = JSON.stringify(stepData.args, null, 2);
+        } else if (typeof stepData.args === 'string') {
+            try {
+                argsEl.textContent = JSON.stringify(JSON.parse(stepData.args), null, 2);
+            } catch {
+                argsEl.textContent = stepData.args;
+            }
+        } else {
+            argsEl.textContent = String(stepData.args || '');
+        }
+    }
+    
+    document.getElementById('drawer-result').textContent = stepData.result || 'Aucune sortie.';
+    drawer.style.right = '0';
+}
+
+function renderGraphIntoContainer(containerId, steps) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+    
+    if (!steps || steps.length === 0) {
+        container.innerHTML = '<div class="sys-msg">Aucune étape exécutée.</div>';
+        return;
+    }
+    
+    const graphDiv = document.createElement('div');
+    graphDiv.className = 'agent-nodes-container';
+    
+    steps.forEach((step, idx) => {
+        const icons = { read_file: '📖', write_file: '✏️', glob_files: '🔍', grep_files: '🔍', list_dir: '📂', exec_shell: '💻', git_status: '⎇', git_commit: '📝', git_init: '🔧', web_fetch: '🌐', web_search: '🔎', probe_path: '🔎', final_answer: '✅' };
+        const icon = icons[step.tool] || '➡️';
+        
+        if (idx > 0) {
+            const arrow = document.createElement('div');
+            arrow.className = 'agent-node-arrow';
+            arrow.textContent = '🠗';
+            graphDiv.appendChild(arrow);
+        }
+        
+        const node = document.createElement('div');
+        node.className = 'agent-node active';
+        node.style.cursor = 'pointer';
+        
+        let details = '';
+        if (step.result) {
+            details = step.result.replace(/\n/g, ' ').slice(0, 100);
+        }
+        
+        const isErr = step.result && step.result.startsWith('ERROR');
+        node.innerHTML = `
+            <span class="agent-node-icon">${icon}</span>
+            <span class="agent-node-title">${step.tool}</span>
+            <span class="agent-node-details">${escHtml(details)}</span>
+            <span class="agent-node-status ${isErr ? 'error' : 'success'}">${isErr ? 'Erreur' : 'Succès'}</span>
+        `;
+        node.stepData = {
+            tool: step.tool,
+            icon: icon,
+            args: step.args,
+            result: step.result,
+            thinking: step.thinking || ''
+        };
+        node.onclick = () => openNodeDetailsDrawer(node.stepData);
+        graphDiv.appendChild(node);
+    });
+    container.appendChild(graphDiv);
+}
+
+document.getElementById('btn-drawer-close')?.addEventListener('click', () => {
+    const drawer = document.getElementById('agent-details-drawer');
+    if (drawer) drawer.style.right = '-400px';
+});
+
 async function gcaRefreshStatus() {
     const pid = currentProjectId;
     if (!pid) return;
     try {
         const status = await api(`/api/gca/status/${pid}`);
         const p = status.current_primary, s = status.current_shadow;
-        elGcaStatus.innerHTML = `<div class="gca-info">
-            <p><strong>Générations:</strong> ${status.total_generations}</p>
-            <p><strong>Primaire:</strong> ${p ? `#${p.id} (gen ${p.generation}, ${p.status})` : 'Aucun'}</p>
-            <p><strong>Ombre:</strong> ${s ? `#${s.id} (gen ${s.generation}, ${s.status})` : 'Aucun'}</p>
-            <p><strong>Vault:</strong> ${status.vault_entries_count} entrées</p></div>`;
+        elGcaStatus.innerHTML = `<div class="gca-info" style="display: flex; gap: 20px;">
+            <div><strong>Générations:</strong> ${status.total_generations}</div>
+            <div><strong>Primaire:</strong> ${p ? `#${p.id} (gen ${p.generation})` : 'Aucun'}</div>
+            <div><strong>Ombre:</strong> ${s ? `#${s.id} (gen ${s.generation})` : 'Aucun'}</div>
+            <div><strong>Vault:</strong> ${status.vault_entries_count} entrées</div>
+        </div>`;
         if (currentProjectId !== pid) return;
+        
+        // Load and render Primary Session Graph
+        if (p) {
+            try {
+                const pSession = await api(`/api/agentic/sessions/${p.id}`);
+                const state = pSession.current_state ? JSON.parse(pSession.current_state) : {};
+                renderGraphIntoContainer('gca-primary-graph', state.steps || []);
+            } catch (err) { console.warn("Error loading primary session details:", err); }
+        } else {
+            document.getElementById('gca-primary-graph').innerHTML = '<div class="sys-msg">Aucun graphe d\'agent primaire.</div>';
+        }
+        
+        // Load and render Shadow Session Graph
+        if (s) {
+            try {
+                const sSession = await api(`/api/agentic/sessions/${s.id}`);
+                const state = sSession.current_state ? JSON.parse(sSession.current_state) : {};
+                renderGraphIntoContainer('gca-shadow-graph', state.steps || []);
+            } catch (err) { console.warn("Error loading shadow session details:", err); }
+        } else {
+            document.getElementById('gca-shadow-graph').innerHTML = '<div class="sys-msg">Aucun graphe d\'agent ombre.</div>';
+        }
+
         const vault = await api(`/api/gca/vault/${pid}`);
         if (currentProjectId !== pid) return;
         elGcaVault.innerHTML = vault.length === 0
             ? '<div class="sys-msg">Vault vide.</div>'
             : vault.slice(-10).map(e =>
-                `<div class="vault-entry"><strong>${e.key}</strong> <span class="sys-msg">(${new Date(e.created_at).toLocaleString()})</span><pre>${e.content.slice(0, 200)}</pre><button class="btn btn-sm btn-secondary publish-pkg-btn" data-key="${escHtml(e.key)}" title="Publier comme paquet PLL">📦 Publier</button></div>`
+                `<div class="vault-entry" style="margin-bottom: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;"><strong>${e.key}</strong> <span class="sys-msg">(${new Date(e.created_at).toLocaleString()})</span><pre style="margin: 4px 0; max-height: 80px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 4px; font-size: 11px;">${e.content.slice(0, 200)}</pre><button class="btn btn-sm btn-secondary publish-pkg-btn" data-key="${escHtml(e.key)}" title="Publier comme paquet PLL">📦 Publier</button></div>`
             ).join('');
         document.querySelectorAll('.publish-pkg-btn').forEach(btn => {
             btn.addEventListener('click', () => publishFromVault(btn.dataset.key));
