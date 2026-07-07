@@ -758,12 +758,12 @@ async function refreshGitStatus() {
         gitFileStatus = {};
         elGitChanges.textContent = '';
         elGitRemote.textContent = '';
-        elGitDebug.textContent = '';
+        if (elGitDebug) elGitDebug.textContent = '';
         return;
     }
     try {
         const st = await api(`/api/git/${currentProjectId}/status`);
-        elGitDebug.textContent = st ? JSON.stringify(st) : 'no response';
+        if (elGitDebug) elGitDebug.textContent = st ? JSON.stringify(st) : 'no response';
         if (!st || !st.is_repo) {
             gitFileStatus = {};
             elGitBranch.textContent = '⎇ — (pas de repo)';
@@ -840,7 +840,7 @@ async function refreshGitStatus() {
         elGitBranch.textContent = '⎇ — (erreur)';
         elGitChanges.textContent = '';
         elGitRemote.textContent = '';
-        elGitDebug.textContent = 'error: ' + e.message;
+        if (elGitDebug) elGitDebug.textContent = 'error: ' + e.message;
     }
     renderVfsList();  // Update git badges in VFS tree
 }
