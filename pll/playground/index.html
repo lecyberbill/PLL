@@ -39,7 +39,7 @@
             <nav class="left-nav">
                 <div class="left-nav-item active" id="nav-item-vfs" title="Explorateur de fichiers">📁</div>
                 <div class="left-nav-item" id="nav-item-orchestrator" title="Graphe d'Orchestration">🌿</div>
-                <div class="left-nav-item" id="nav-item-db" title="Base de données">📦</div>
+                <div class="left-nav-item" id="nav-item-db" title="Base de données (Paquets)">📦</div>
                 <div class="left-nav-item" id="nav-item-settings" title="Configuration">⚙️</div>
                 <div class="left-nav-item-bottom" id="nav-item-profile" title="Profil">👤</div>
                 <div class="left-nav-item-bottom" id="nav-item-global-settings" title="Paramètres Généraux">⚙️</div>
@@ -50,6 +50,7 @@
                     <div class="sidebar-tabs" style="display: flex; gap: 8px;">
                         <button class="sidebar-tab-btn active" id="tab-btn-vfs" style="background: none; border: none; color: var(--text-primary); cursor: pointer; font-size: 13px; font-weight: bold; border-bottom: 2px solid var(--accent-color); padding: 4px 0;">📂 Fichiers</button>
                         <button class="sidebar-tab-btn" id="tab-btn-sessions" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; font-weight: bold; padding: 4px 0;">🕒 Sessions</button>
+                        <button class="sidebar-tab-btn" id="tab-btn-packages" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; font-weight: bold; padding: 4px 0;">📦 Paquets</button>
                     </div>
                     <button id="btn-add-file" class="btn btn-sm btn-secondary" style="margin-left: auto;" title="Nouveau fichier">+</button>
                 </div>
@@ -82,6 +83,12 @@
                 <div class="sessions-manager sidebar-content-item" id="sidebar-content-sessions" style="flex: 1; display: none; flex-direction: column; overflow: hidden; padding: 8px;">
                     <button id="btn-sidebar-new-session" class="btn btn-primary btn-sm" style="width: 100%; margin-bottom: 8px;">+ Nouvelle Session</button>
                     <div id="sidebar-sessions-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;"></div>
+                </div>
+                <div class="packages-manager sidebar-content-item" id="sidebar-content-packages" style="flex: 1; display: none; flex-direction: column; overflow: hidden; padding: 8px;">
+                    <h3 style="font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; color: var(--text-muted);">Gestionnaire de Paquets PLL</h3>
+                    <div id="packages-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+                        <div class="sys-msg">Aucun paquet.</div>
+                    </div>
                 </div>
             </aside>
             <div class="resize-handle" id="resize-handle-left"></div>
