@@ -1,7 +1,7 @@
 import { loadMonaco, detectLanguage } from './editor-setup.js';
 import { set_virtual_file, get_virtual_file } from './pkg/pll_wasm.js';
 
-const API_BASE = '';
+const API_BASE = (window.location.port === '1430' || (window.location.hostname !== 'localhost' && window.location.port !== '8080')) ? 'http://127.0.0.1:8080' : '';
 let monaco, editor;
 let monacoDiffEditor = null;
 let gitAheadFiles = [];
