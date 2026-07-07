@@ -1825,11 +1825,15 @@ elModalSave.addEventListener('click', async () => {
     }
 });
 
-elAgenticSend.addEventListener('click', sendAgenticMessage);
-elAgenticInput.addEventListener('keydown', (e) => {
+elAgenticSend?.addEventListener('click', sendAgenticMessage);
+elAgenticInput?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAgenticMessage(); }
 });
-elAgenticClear.addEventListener('click', () => {
+elAgenticClear?.addEventListener('click', () => {
+    elAgenticConversation.innerHTML = '<div class="sys-msg">Posez une question à l\'agent.</div>';
+    agenticConversationHistory = [];
+});
+document.getElementById('btn-agentic-refresh')?.addEventListener('click', () => {
     elAgenticConversation.innerHTML = '<div class="sys-msg">Posez une question à l\'agent.</div>';
     agenticConversationHistory = [];
 });
@@ -1841,7 +1845,7 @@ if (elBtnTerminalClear) {
     });
 }
 
-elBtnRefreshPackages.addEventListener('click', refreshPackages);
+elBtnRefreshPackages?.addEventListener('click', refreshPackages);
 
 // Git status bar debug (click to toggle)
 const gitStatusBar = document.getElementById('git-status-bar');
