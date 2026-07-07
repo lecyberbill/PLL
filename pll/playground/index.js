@@ -2055,12 +2055,7 @@ document.getElementById('git-btn-commit')?.addEventListener('click', async () =>
     }
 });
 
-// Load conversations on tab switch
-const origSwitchTab = switchTab;
-switchTab = function(tabId) {
-    origSwitchTab(tabId);
-    if (tabId === 'tab-conversations') loadConversations();
-};
+// Load conversations on tab switch handled inside switchTab
 
 elBtnRefreshConv?.addEventListener('click', loadConversations);
 
@@ -2082,6 +2077,7 @@ function switchTab(tabId) {
         content.classList.add('active');
         content.style.display = (tabId === 'tab-agentic' || tabId === 'tab-terminal') ? 'flex' : 'block';
     }
+    if (tabId === 'tab-conversations' || tabId === 'tab-agentic') loadConversations();
 }
 
 // Settings Modal bindings
