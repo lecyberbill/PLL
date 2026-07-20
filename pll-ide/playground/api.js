@@ -100,7 +100,8 @@ export async function api(path, options = {}) {
                 systemPrompt: body.system || null,
                 temperature: body.temperature || null,
                 maxTokens: body.max_tokens || null,
-                backend: body.backend || null
+                backend: body.backend || null,
+                noCache: body.no_cache || null
             });
             return { response: res.response, backend: res.backend };
         }

@@ -436,7 +436,8 @@ export async function runReActLoopClient(userMessage, backend, placeholder) {
                     system: REACT_SYSTEM_PROMPT + "\n\n" + contextStr,
                     temperature: 0.15,
                     max_tokens: 4096,
-                    backend: backend === 'auto' ? '' : backend
+                    backend: backend === 'auto' ? '' : backend,
+                    no_cache: true
                 })
             });
         } catch (err) {

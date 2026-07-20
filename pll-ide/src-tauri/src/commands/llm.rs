@@ -123,6 +123,7 @@ pub async fn chat_completion(
     temperature: Option<f64>,
     max_tokens: Option<usize>,
     backend: Option<String>,
+    no_cache: Option<bool>,
 ) -> Result<LLMResponse, String> {
     load_env();
     
@@ -141,8 +142,10 @@ pub async fn chat_completion(
     let selected_backend = backend.unwrap_or(default_backend);
 
     // Check cache
-    if let Some(cached) = lookup_cache(&sys_prompt, &messages, &selected_backend) {
-        return Ok(cached);
+    if no_cache.unwrap_or(false) == false {
+        if let Some(cached) = lookup_cache(&sys_prompt, &messages, &selected_backend) {
+            return Ok(cached);
+        }
     }
 
     let client = Client::new();
@@ -220,6 +223,8 @@ pub async fn chat_completion(
         backend: selected_backend.clone(),
     };
 
-    store_cache(&sys_prompt, &messages, &selected_backend, result_resp.clone());
+    if no_cache.unwrap_or(false) == false {
+        store_cache(&sys_prompt, &messages, &selected_backend, result_resp.clone());
+    }
     Ok(result_resp)
 }
