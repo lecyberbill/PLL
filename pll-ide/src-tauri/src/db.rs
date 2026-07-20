@@ -1,8 +1,8 @@
 use rusqlite::{Connection, Result};
 
 pub fn get_connection() -> Result<Connection> {
-    // Save database in the playground/server root directory for consistency
-    let db_path = "pll_server.db";
+    // Save database in the parent directory of src-tauri to prevent Tauri hot reload
+    let db_path = "../pll_server.db";
     let conn = Connection::open(db_path)?;
     
     // Enable WAL mode for performance
