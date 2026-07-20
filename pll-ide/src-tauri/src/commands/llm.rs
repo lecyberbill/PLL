@@ -54,7 +54,7 @@ fn calculate_jaccard(set_a: &HashSet<String>, set_b: &HashSet<String>) -> f64 {
     intersection.len() as f64 / union.len() as f64
 }
 
-fn lookup_cache(system_prompt: &str, messages: &[ChatMessage], backend: &str) -> Option<LLMResponse> {
+fn lookup_cache(_system_prompt: &str, messages: &[ChatMessage], backend: &str) -> Option<LLMResponse> {
     let cache_path = "llm_cache.json";
     if !Path::new(cache_path).exists() {
         return None;
@@ -62,7 +62,7 @@ fn lookup_cache(system_prompt: &str, messages: &[ChatMessage], backend: &str) ->
     let data = fs::read_to_string(cache_path).ok()?;
     let cache: Vec<CacheEntry> = serde_json::from_str(&data).unwrap_or_default();
     
-    let query_text = format!("{}\n{}", system_prompt, messages.iter().map(|m| m.content.as_str()).collect::<Vec<_>>().join("\n"));
+    let query_text = messages.iter().map(|m| m.content.as_str()).collect::<Vec<_>>().join("\n");
     let query_tokens = tokenize(&query_text);
     
     let mut best_match: Option<CacheEntry> = None;
@@ -73,8 +73,8 @@ fn lookup_cache(system_prompt: &str, messages: &[ChatMessage], backend: &str) ->
         if entry.backend != backend {
             continue;
         }
-        let cached_text = format!("{}\n{}", entry.system_prompt, entry.prompt_text);
-        let cached_tokens = tokenize(&cached_text);
+        let cached_text = &entry.prompt_text;
+        let cached_tokens = tokenize(cached_text);
         let sim = calculate_jaccard(&query_tokens, &cached_tokens);
         if sim >= threshold && sim > best_sim {
             best_sim = sim;
