@@ -381,18 +381,21 @@ export async function loadProjectFromServer(projectId) {
     try {
         state.currentProjectId = projectId;
         clearDefaults();
-        const tree = await api(`/api/projects/${projectId}/files`);
+        const files = await api(`/api/projects/${projectId}/files`);
         state.filesList = [];
-        async function walk(nodes) {
-            for (const node of nodes) {
-                if (node.type === 'dir' && node.children) await walk(node.children);
-                else if (node.path) {
-                    if (node.content !== undefined) set_virtual_file(node.path, node.content);
-                    state.filesList.push(node.path);
+        if (Array.isArray(files)) {
+            for (const filePath of files) {
+                try {
+                    const res = await api(`/api/projects/${projectId}/files/${encodeURIComponent(filePath)}`);
+                    if (res && res.content !== undefined) {
+                        set_virtual_file(filePath, res.content);
+                    }
+                } catch (err) {
+                    console.warn(`Could not load file content for ${filePath}:`, err);
                 }
+                state.filesList.push(filePath);
             }
         }
-        await walk(tree);
         state.openFiles = ['logic_flow.agent'];
         state.activeFile = 'logic_flow.agent';
         clearEditor();

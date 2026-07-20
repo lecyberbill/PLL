@@ -457,18 +457,21 @@ export async function runReActLoopClient(userMessage, backend, placeholder) {
             addAgenticMessage('assistant', responseText);
             if (state.currentProjectId) {
                 try {
-                    const tree = await api(`/api/projects/${state.currentProjectId}/files`);
+                    const files = await api(`/api/projects/${state.currentProjectId}/files`);
                     state.filesList = [];
-                    async function walk(nodes) {
-                        for (const node of nodes) {
-                            if (node.type === 'dir' && node.children) await walk(node.children);
-                            else if (node.path) {
-                                if (node.content !== undefined) set_virtual_file(node.path, node.content);
-                                state.filesList.push(node.path);
+                    if (Array.isArray(files)) {
+                        for (const filePath of files) {
+                            try {
+                                const res = await api(`/api/projects/${state.currentProjectId}/files/${encodeURIComponent(filePath)}`);
+                                if (res && res.content !== undefined) {
+                                    set_virtual_file(filePath, res.content);
+                                }
+                            } catch (err) {
+                                console.warn(`Could not load file content:`, err);
                             }
+                            state.filesList.push(filePath);
                         }
                     }
-                    await walk(tree);
                     renderVfsList();
                 } catch (e) {
                     console.error("Failed to reload VFS after agent final answer:", e);
@@ -565,18 +568,21 @@ export async function runReActLoopClient(userMessage, backend, placeholder) {
     await saveConversationMessage('assistant', responseText);
     if (state.currentProjectId) {
         try {
-            const tree = await api(`/api/projects/${state.currentProjectId}/files`);
+            const files = await api(`/api/projects/${state.currentProjectId}/files`);
             state.filesList = [];
-            async function walk(nodes) {
-                for (const node of nodes) {
-                    if (node.type === 'dir' && node.children) await walk(node.children);
-                    else if (node.path) {
-                        if (node.content !== undefined) set_virtual_file(node.path, node.content);
-                        state.filesList.push(node.path);
+            if (Array.isArray(files)) {
+                for (const filePath of files) {
+                    try {
+                        const res = await api(`/api/projects/${state.currentProjectId}/files/${encodeURIComponent(filePath)}`);
+                        if (res && res.content !== undefined) {
+                            set_virtual_file(filePath, res.content);
+                        }
+                    } catch (err) {
+                        console.warn(`Could not load file content:`, err);
                     }
+                    state.filesList.push(filePath);
                 }
             }
-            await walk(tree);
             renderVfsList();
         } catch (e) {
             console.error("Failed to reload VFS after agent loop:", e);
