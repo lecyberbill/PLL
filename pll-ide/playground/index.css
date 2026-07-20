@@ -49,6 +49,7 @@ body {
 .header-center { flex: 1; display: flex; align-items: center; justify-content: center; }
 .project-bar { display: flex; gap: 6px; align-items: center; }
 .project-select { background: var(--bg-dark); color: var(--text-primary); border: 1px solid var(--border-color); padding: 4px 10px; border-radius: var(--radius-sm); font-size: 11px; outline: none; }
+select option { background-color: var(--bg-secondary) !important; color: var(--text-primary) !important; font-family: var(--font-sans); }
 
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .btn {
