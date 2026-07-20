@@ -55,7 +55,7 @@ fn calculate_jaccard(set_a: &HashSet<String>, set_b: &HashSet<String>) -> f64 {
 }
 
 fn lookup_cache(_system_prompt: &str, messages: &[ChatMessage], backend: &str) -> Option<LLMResponse> {
-    let cache_path = "llm_cache.json";
+    let cache_path = "../llm_cache.json";
     if !Path::new(cache_path).exists() {
         return None;
     }
@@ -91,7 +91,7 @@ fn lookup_cache(_system_prompt: &str, messages: &[ChatMessage], backend: &str) -
 }
 
 fn store_cache(system_prompt: &str, messages: &[ChatMessage], backend: &str, response: LLMResponse) {
-    let cache_path = "llm_cache.json";
+    let cache_path = "../llm_cache.json";
     let mut cache: Vec<CacheEntry> = if Path::new(cache_path).exists() {
         let data = fs::read_to_string(cache_path).unwrap_or_default();
         serde_json::from_str(&data).unwrap_or_default()
