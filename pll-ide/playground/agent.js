@@ -328,12 +328,28 @@ export function closeNodeDetailsDrawer() {
     if (drawer) drawer.classList.remove('open');
 }
 
-const REACT_SYSTEM_PROMPT = `You are an AI coding assistant that thinks and acts in PLL.
+export function getHostOS() {
+    const userAgent = navigator.userAgent.toLowerCase();
+    if (userAgent.includes('win')) return 'windows';
+    if (userAgent.includes('mac')) return 'macos';
+    if (userAgent.includes('linux')) return 'linux';
+    return 'linux';
+}
 
-CRITICAL ENVIRONMENT WARNING:
+export function getSystemPrompt() {
+    const os = getHostOS();
+    const osWarning = os === 'windows'
+        ? `CRITICAL ENVIRONMENT WARNING:
 The host operating system is WINDOWS. You MUST write commands compatible with Windows (Command Prompt / PowerShell).
 Do NOT attempt to use bash, sh, Unix pipes (|), tee, head, tail, grep, or Unix paths like /tmp/ or /dev/null!
-To compile or test, simply run "cargo" with standard arguments directly, e.g. run_command("cargo", ["build"]) or run_command("cargo", ["run"]).
+To compile or test, simply run "cargo" with standard arguments directly, e.g. run_command("cargo", ["build"]) or run_command("cargo", ["run"]).`
+        : `CRITICAL ENVIRONMENT WARNING:
+The host operating system is ${os.toUpperCase()}. You MUST write commands compatible with Unix shells (bash/sh).
+You can use standard Unix pipes, redirection, and tools like cargo, git, cat, head, tail, etc.`;
+
+    return `You are an AI coding assistant that thinks and acts in PLL.
+
+${osWarning}
 
 PLL is for planning AND action — call tools using function syntax: list_dir(".").
 You can also respond with plain text when answering a question.
@@ -384,6 +400,7 @@ run_command("cargo", ["run"])
 Call this when you have completed your task to output your final response.
 final_answer("I have completed the files.")
 `;
+}
 
 export async function runReActLoopClient(userMessage, backend, placeholder) {
     const filesListText = state.filesList.length > 0 ? `Files: ${state.filesList.join(', ')}` : 'Files: (empty)';
@@ -438,7 +455,7 @@ export async function runReActLoopClient(userMessage, backend, placeholder) {
                 method: 'POST',
                 body: JSON.stringify({
                     messages: messages,
-                    system: REACT_SYSTEM_PROMPT + "\n\n" + contextStr,
+                    system: getSystemPrompt() + "\n\n" + contextStr,
                     temperature: 0.15,
                     max_tokens: 4096,
                     backend: backend === 'auto' ? '' : backend,
