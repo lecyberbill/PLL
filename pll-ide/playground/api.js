@@ -150,7 +150,8 @@ export async function api(path, options = {}) {
             return await invoke('run_project_command', {
                 projectId: parseInt(body.projectId),
                 command: body.command,
-                args: body.args || []
+                args: body.args || [],
+                cwd: body.cwd || null
             });
         }
     }

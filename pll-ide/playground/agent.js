@@ -403,12 +403,15 @@ delete_file("relative/path")
 List directory contents.
 list_dir(".")
 
-### run_command(command, args)
+### run_command(command, args, cwd)
 Execute a shell command inside the project directory and return its stdout/stderr.
-args is a JSON list of argument strings.
+- command: the executable name (e.g. "cargo", "npm", "python")
+- args: a JSON list of argument strings
+- cwd: (optional) a subdirectory path relative to the project root to run the command in (e.g. "moteur_2d")
 Example:
-run_command("cargo", ["build"])
-run_command("cargo", ["run"])
+run_command("cargo", ["build"], "moteur_2d")
+run_command("npm", ["install"], "frontend")
+run_command("python", ["main.py"])
 
 ### final_answer(text)
 Call this when you have completed your task to output your final response.
@@ -655,16 +658,17 @@ export function parseToolCallsJS(text) {
     }
 
     let rcMatch;
-    const runCommandPattern = /run_command\s*\(\s*["'`]([^"'`]+)["'`]\s*,\s*\[([\s\S]*?)\]\s*\)/g;
+    const runCommandPattern = /run_command\s*\(\s*["'`]([^"'`]+)["'`]\s*,\s*\[([\s\S]*?)\]\s*(?:,\s*["'`]([^"'`]+)["'`]\s*)?\)/g;
     while ((rcMatch = runCommandPattern.exec(text)) !== null) {
         const cmd = rcMatch[1];
         const rawArgs = rcMatch[2];
+        const cwd = rcMatch[3] || "";
         const parsedArgs = rawArgs.split(',')
             .map(s => s.trim().replace(/^["'`]|["'`]$/g, ''))
             .filter(s => s.length > 0);
         calls.push({
             tool: "run_command",
-            args: { command: cmd, args: parsedArgs }
+            args: { command: cmd, args: parsedArgs, cwd }
         });
     }
     
@@ -711,10 +715,11 @@ export async function executeToolJS(tool, args) {
             body: JSON.stringify({
                 projectId: state.currentProjectId,
                 command: args.command,
-                args: args.args || []
+                args: args.args || [],
+                cwd: args.cwd || ""
             })
         });
-        logToTerminal(`[Agent Command] ❯ ${args.command} ${args.args.join(' ')}\n${res}`, 'sys-msg');
+        logToTerminal(`[Agent Command] ❯ ${args.command} ${args.args.join(' ')}${args.cwd ? ` (in ${args.cwd})` : ''}\n${res}`, 'sys-msg');
         return res;
     }
     throw new Error(`Tool inconnu ${tool}`);

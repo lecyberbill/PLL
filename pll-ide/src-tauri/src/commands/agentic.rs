@@ -177,19 +177,27 @@ pub fn run_project_command(
     project_id: i64,
     command: String,
     args: Vec<String>,
+    cwd: Option<String>,
 ) -> Result<String, String> {
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
     use tauri::Emitter;
 
     let conn = db::get_connection().map_err(|e| e.to_string())?;
-    let disk_path: String = conn
+    let mut disk_path: String = conn
         .query_row(
             "SELECT disk_path FROM projects WHERE id = ?1",
             [project_id],
             |row| row.get(0),
         )
         .map_err(|e| e.to_string())?;
+
+    if let Some(sub_dir) = cwd {
+        if !sub_dir.is_empty() {
+            let path = std::path::Path::new(&disk_path).join(sub_dir);
+            disk_path = path.to_string_lossy().to_string();
+        }
+    }
 
     #[cfg(target_os = "windows")]
     let mut cmd = {
