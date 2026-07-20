@@ -258,8 +258,69 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 document.querySelectorAll('.sidebar-tab-btn').forEach(btn => {
-    btn.onclick = () => switchSidebarTab(btn.dataset.tab);
+    const tabId = btn.id.replace('tab-btn-', '');
+    btn.onclick = () => switchSidebarTab(tabId);
 });
+
+// Left Navigation Items
+const navItems = ['nav-item-vfs', 'nav-item-orchestrator', 'nav-item-db', 'nav-item-settings', 'nav-item-profile', 'nav-item-global-settings'];
+navItems.forEach(id => {
+    document.getElementById(id)?.addEventListener('click', () => {
+        const sidebar = document.getElementById('sidebar-files');
+        const canvas = document.getElementById('orchestrator-canvas');
+        const editorView = document.querySelector('.editor-container');
+        
+        if (id === 'nav-item-settings' || id === 'nav-item-global-settings') {
+            document.getElementById('settings-modal')?.classList.add('open');
+            return;
+        }
+
+        navItems.forEach(n => {
+            if (n !== 'nav-item-settings' && n !== 'nav-item-global-settings') {
+                document.getElementById(n)?.classList.remove('active');
+            }
+        });
+        document.getElementById(id)?.classList.add('active');
+
+        if (id === 'nav-item-vfs') {
+            if (sidebar) sidebar.style.display = 'flex';
+            if (canvas) canvas.style.display = 'none';
+            if (editorView) editorView.style.display = 'block';
+            switchSidebarTab('vfs');
+        } else if (id === 'nav-item-orchestrator') {
+            if (sidebar) sidebar.style.display = 'none';
+            if (canvas) canvas.style.display = 'block';
+            if (editorView) editorView.style.display = 'none';
+        } else if (id === 'nav-item-db') {
+            if (sidebar) sidebar.style.display = 'flex';
+            if (canvas) canvas.style.display = 'none';
+            if (editorView) editorView.style.display = 'none';
+            switchSidebarTab('packages');
+        } else if (id === 'nav-item-profile') {
+            if (sidebar) sidebar.style.display = 'flex';
+            if (canvas) canvas.style.display = 'none';
+            if (editorView) editorView.style.display = 'none';
+            switchSidebarTab('sessions');
+        }
+        if (state.editor) state.editor.layout();
+    });
+});
+
+// Settings Modal
+const elBtnSettings = document.getElementById('btn-settings');
+const elSettingsModal = document.getElementById('settings-modal');
+const elBtnSettingsClose = document.getElementById('btn-settings-close');
+
+if (elBtnSettings) {
+    elBtnSettings.onclick = () => {
+        if (elSettingsModal) elSettingsModal.classList.add('open');
+    };
+}
+if (elBtnSettingsClose) {
+    elBtnSettingsClose.onclick = () => {
+        if (elSettingsModal) elSettingsModal.classList.remove('open');
+    };
+}
 
 // Agent interaction bindings
 if (elAgenticSend) elAgenticSend.onclick = sendAgenticMessage;

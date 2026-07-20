@@ -37,10 +37,19 @@ export function switchTab(tabId) {
 
 export function switchSidebarTab(tabId) {
     document.querySelectorAll('.sidebar-tab-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.tab === tabId);
+        const isActive = (btn.id === `tab-btn-${tabId}`) || (btn.dataset.tab === tabId);
+        btn.classList.toggle('active', isActive);
+        if (isActive) {
+            btn.style.borderBottom = '2px solid var(--accent-color)';
+            btn.style.color = 'var(--text-primary)';
+        } else {
+            btn.style.borderBottom = 'none';
+            btn.style.color = 'var(--text-muted)';
+        }
     });
-    document.querySelectorAll('.sidebar-tab-content').forEach(content => {
-        content.classList.toggle('active', content.id === `sidebar-${tabId}`);
+    document.querySelectorAll('.sidebar-content-item').forEach(content => {
+        const isActive = (content.id === `sidebar-content-${tabId}`);
+        content.style.display = isActive ? 'flex' : 'none';
     });
 }
 
