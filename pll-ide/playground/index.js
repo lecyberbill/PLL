@@ -67,23 +67,28 @@ const elBtnGcaClear = document.getElementById('btn-gca-clear');
 
 // Main loop trigger
 async function sendAgenticMessage() {
-    const msg = elAgenticInput.value.trim();
-    if (!msg) return;
-    if (!await ensureProjectForAgentic()) return;
-    
-    elAgenticInput.value = '';
-    addAgenticMessage('user', msg);
-    await saveConversationMessage('user', msg);
-    
-    const backend = elSettingsBackend.value;
-
-    const placeholder = addAgenticMessage('system', '🤖 Agent en cours...');
-    placeholder.style.opacity = '0.6';
-
     try {
-        await runReActLoopClient(msg, backend, placeholder);
-    } catch (e) {
-        placeholder.textContent = `⚠️ Erreur : ${e.message}`;
+        const msg = elAgenticInput.value.trim();
+        if (!msg) return;
+        if (!await ensureProjectForAgentic()) return;
+        
+        elAgenticInput.value = '';
+        addAgenticMessage('user', msg);
+        await saveConversationMessage('user', msg);
+        
+        const backend = elSettingsBackend.value;
+
+        const placeholder = addAgenticMessage('system', '🤖 Agent en cours...');
+        placeholder.style.opacity = '0.6';
+
+        try {
+            await runReActLoopClient(msg, backend, placeholder);
+        } catch (e) {
+            placeholder.textContent = `⚠️ Erreur : ${e.message}`;
+        }
+    } catch (err) {
+        console.error("Error in sendAgenticMessage:", err);
+        logToTerminal(`Erreur d'envoi: ${err.message}`, 'error-msg');
     }
 }
 
