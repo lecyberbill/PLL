@@ -670,7 +670,7 @@ export async function executeToolJS(tool, args) {
         return args.text;
     }
     if (tool === 'run_command') {
-        return await api('/api/agentic/run_command', {
+        const res = await api('/api/agentic/run_command', {
             method: 'POST',
             body: JSON.stringify({
                 projectId: state.currentProjectId,
@@ -678,6 +678,8 @@ export async function executeToolJS(tool, args) {
                 args: args.args || []
             })
         });
+        logToTerminal(`[Agent Command] ❯ ${args.command} ${args.args.join(' ')}\n${res}`, 'sys-msg');
+        return res;
     }
     throw new Error(`Tool inconnu ${tool}`);
 }
