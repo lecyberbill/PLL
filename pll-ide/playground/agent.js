@@ -184,6 +184,18 @@ export async function loadSessions() {
                 sidebarList.appendChild(item);
             }
         });
+
+        // Set selected value explicitly to ensure history loads on reload
+        let activeSession = sessions.find(s => s.status === 'active');
+        if (!activeSession && sessions.length > 0) {
+            activeSession = sessions[0];
+        }
+        if (activeSession) {
+            const targetId = activeId || activeSession.id.toString();
+            if (elAgenticSessionSelect) elAgenticSessionSelect.value = targetId;
+            if (elSettingsSessionSelect) elSettingsSessionSelect.value = targetId;
+        }
+
         syncTabs();
     } catch (e) {
         console.warn('Error loading sessions:', e.message);
