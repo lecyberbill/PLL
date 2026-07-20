@@ -168,10 +168,13 @@
                 
                 <!-- Right developmental agent panel -->
                 <section class="pane results-pane" style="width: 450px; display: flex; flex-direction: column;">
-                    <div class="pane-header" style="justify-content: space-between;">
-                        <div class="agent-title-bar">
-                            <span class="agent-avatar">🤖</span>
+                    <div class="pane-header agent-title-bar" style="padding: 12px 16px;">
+                        <div class="agent-title-bar" style="flex: 1; display: flex; align-items: center;">
+                            <span class="status-indicator success"></span>
                             <h3>Agent de Développement</h3>
+                            <select id="agentic-session-select" class="project-select" style="width: auto; max-width: 140px; font-size: 11px; padding: 2px 4px; margin-left: 8px; border-radius: 4px; height: 22px; background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); color: var(--text-primary); outline: none;">
+                                <option value="">-- Session --</option>
+                            </select>
                         </div>
                         <div class="agent-actions">
                             <button id="btn-agentic-refresh" class="agent-act-btn" title="Rafraîchir">↻</button>
