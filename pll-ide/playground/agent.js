@@ -354,14 +354,17 @@ export function getSystemPrompt() {
         ? `CRITICAL ENVIRONMENT WARNING:
 The host operating system is WINDOWS. You MUST write commands compatible with Windows (Command Prompt / PowerShell).
 Do NOT attempt to use bash, sh, Unix pipes (|), tee, head, tail, grep, or Unix paths like /tmp/ or /dev/null!
-To compile or test, simply run "cargo" with standard arguments directly, e.g. run_command("cargo", ["build"]) or run_command("cargo", ["run"]).
-If your Cargo project is in a subdirectory (like "moteur_2d"), you MUST use the --manifest-path option to specify the path to Cargo.toml (e.g. run_command("cargo", ["run", "--manifest-path", "moteur_2d/Cargo.toml"])) instead of using cd or shell chaining.
-CRITICAL RUNNING RULE: Before calling "cargo run", you MUST always run "cargo check" or "cargo build" first and verify it compiles with status 0. If check/build fails, you MUST fix the compile errors first. Running "cargo run" directly on unverified code will run in the background and make you blind to compilation failures.`
+To execute commands in subdirectories, use the optional 'cwd' parameter of the run_command tool instead of shell chaining or using 'cd'.
+
+CRITICAL PROFESSIONAL RUNNING RULE:
+Before starting or running any long-running or background processes (like servers, web apps, GUI applications, or watch modes), you MUST always run a compilation, verification, syntax-checking, or linting step (e.g. build, check, lint, or run unit tests) first, and verify it finishes successfully (status 0). If this check/build fails, you MUST fix the errors first. Spawning background execution commands on unverified code will hide build-time failures and make you blind to compilation or startup errors.`
         : `CRITICAL ENVIRONMENT WARNING:
 The host operating system is ${os.toUpperCase()}. You MUST write commands compatible with Unix shells (bash/sh).
 You can use standard Unix pipes, redirection, and tools like cargo, git, cat, head, tail, etc.
-If your Cargo project is in a subdirectory (like "moteur_2d"), you MUST use the --manifest-path option to specify the path to Cargo.toml (e.g. run_command("cargo", ["run", "--manifest-path", "moteur_2d/Cargo.toml"])) instead of using cd or shell chaining.
-CRITICAL RUNNING RULE: Before calling "cargo run", you MUST always run "cargo check" or "cargo build" first and verify it compiles with status 0. If check/build fails, you MUST fix the compile errors first. Running "cargo run" directly on unverified code will run in the background and make you blind to compilation failures.`;
+To execute commands in subdirectories, use the optional 'cwd' parameter of the run_command tool instead of shell chaining or using 'cd'.
+
+CRITICAL PROFESSIONAL RUNNING RULE:
+Before starting or running any long-running or background processes (like servers, web apps, GUI applications, or watch modes), you MUST always run a compilation, verification, syntax-checking, or linting step (e.g. build, check, lint, or run unit tests) first, and verify it finishes successfully (status 0). If this check/build fails, you MUST fix the errors first. Spawning background execution commands on unverified code will hide build-time failures and make you blind to compilation or startup errors.`;
 
     return `You are an AI coding assistant that thinks and acts in PLL.
 
