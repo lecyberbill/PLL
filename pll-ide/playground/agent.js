@@ -330,6 +330,11 @@ export function closeNodeDetailsDrawer() {
 
 const REACT_SYSTEM_PROMPT = `You are an AI coding assistant that thinks and acts in PLL.
 
+CRITICAL ENVIRONMENT WARNING:
+The host operating system is WINDOWS. You MUST write commands compatible with Windows (Command Prompt / PowerShell).
+Do NOT attempt to use bash, sh, Unix pipes (|), tee, head, tail, grep, or Unix paths like /tmp/ or /dev/null!
+To compile or test, simply run "cargo" with standard arguments directly, e.g. run_command("cargo", ["build"]) or run_command("cargo", ["run"]).
+
 PLL is for planning AND action — call tools using function syntax: list_dir(".").
 You can also respond with plain text when answering a question.
 
