@@ -144,6 +144,14 @@ export async function api(path, options = {}) {
                 content: body.content 
             });
         }
+        if (pathname === '/api/agentic/run_command' && options.method === 'POST') {
+            const body = JSON.parse(options.body || '{}');
+            return await invoke('run_project_command', {
+                projectId: parseInt(body.projectId),
+                command: body.command,
+                args: body.args || []
+            });
+        }
     }
     
     const headers = { 'Content-Type': 'application/json', ...options.headers };

@@ -170,3 +170,41 @@ pub fn save_message(project_id: i64, session_id: i64, role: String, content: Str
     .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn run_project_command(project_id: i64, command: String, args: Vec<String>) -> Result<String, String> {
+    let conn = db::get_connection().map_err(|e| e.to_string())?;
+    let disk_path: String = conn
+        .query_row(
+            "SELECT disk_path FROM projects WHERE id = ?1",
+            [project_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("powershell");
+        c.arg("-Command");
+        let full_cmd = format!("{} {}", command, args.join(" "));
+        c.arg(full_cmd);
+        c
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = {
+        let mut c = std::process::Command::new(&command);
+        c.args(args);
+        c
+    };
+
+    let output = cmd
+        .current_dir(disk_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    
+    Ok(format!("{}\n{}", stdout, stderr))
+}

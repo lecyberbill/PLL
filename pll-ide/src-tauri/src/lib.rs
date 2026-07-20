@@ -46,7 +46,8 @@ pub fn run() {
         commands::agentic::get_session,
         commands::agentic::archive_session,
         commands::agentic::get_conversations,
-        commands::agentic::save_message
+        commands::agentic::save_message,
+        commands::agentic::run_project_command
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

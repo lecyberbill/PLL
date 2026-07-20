@@ -368,6 +368,13 @@ delete_file("relative/path")
 List directory contents.
 list_dir(".")
 
+### run_command(command, args)
+Execute a shell command inside the project directory and return its stdout/stderr.
+args is a JSON list of argument strings.
+Example:
+run_command("cargo", ["build"])
+run_command("cargo", ["run"])
+
 ### final_answer(text)
 Call this when you have completed your task to output your final response.
 final_answer("I have completed the files.")
@@ -472,7 +479,7 @@ export async function runReActLoopClient(userMessage, backend, placeholder) {
 
         for (const call of calls) {
             thinkingDots = 0;
-            const icons = { read_file: '📖', write_file: '✏️', delete_file: '✕', list_dir: '📂', final_answer: '✅' };
+            const icons = { read_file: '📖', write_file: '✏️', delete_file: '✕', list_dir: '📂', final_answer: '✅', run_command: '💻' };
             const icon = icons[call.tool] || '➡️';
             
             // Finalize previous running node
@@ -499,6 +506,8 @@ export async function runReActLoopClient(userMessage, backend, placeholder) {
                 finalPath = call.args.path;
             } else if (call.tool === 'read_file' || call.tool === 'delete_file') {
                 details = call.args.path;
+            } else if (call.tool === 'run_command') {
+                details = `${call.args.command} ${call.args.args.join(' ')}`;
             } else if (call.tool === 'final_answer') {
                 details = call.args.text.slice(0, 100);
                 answer = call.args.text;
@@ -577,7 +586,7 @@ export async function runReActLoopClient(userMessage, backend, placeholder) {
 
 export function parseToolCallsJS(text) {
     const calls = [];
-    const knownTools = ["write_file", "read_file", "delete_file", "list_dir", "final_answer"];
+    const knownTools = ["write_file", "read_file", "delete_file", "list_dir", "final_answer", "run_command"];
     
     const writePattern = /write_file\s*\(\s*["']([^"']+)["']\s*,\s*(?:'''([\s\S]*?)'''|"""([\s\S]*?)"""|`([\s\S]*?)`|"([\s\S]*?)"|'([\s\S]*?)')\s*\)/g;
     let match;
@@ -600,6 +609,20 @@ export function parseToolCallsJS(text) {
         } else if (tool === 'final_answer') {
             calls.push({ tool, args: { text: arg } });
         }
+    }
+
+    let rcMatch;
+    const runCommandPattern = /run_command\s*\(\s*["'`]([^"'`]+)["'`]\s*,\s*\[([\s\S]*?)\]\s*\)/g;
+    while ((rcMatch = runCommandPattern.exec(text)) !== null) {
+        const cmd = rcMatch[1];
+        const rawArgs = rcMatch[2];
+        const parsedArgs = rawArgs.split(',')
+            .map(s => s.trim().replace(/^["'`]|["'`]$/g, ''))
+            .filter(s => s.length > 0);
+        calls.push({
+            tool: "run_command",
+            args: { command: cmd, args: parsedArgs }
+        });
     }
     
     return calls;
@@ -638,6 +661,16 @@ export async function executeToolJS(tool, args) {
     }
     if (tool === 'final_answer') {
         return args.text;
+    }
+    if (tool === 'run_command') {
+        return await api('/api/agentic/run_command', {
+            method: 'POST',
+            body: JSON.stringify({
+                projectId: state.currentProjectId,
+                command: args.command,
+                args: args.args || []
+            })
+        });
     }
     throw new Error(`Tool inconnu ${tool}`);
 }
