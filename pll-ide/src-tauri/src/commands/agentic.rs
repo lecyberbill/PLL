@@ -172,7 +172,16 @@ pub fn save_message(project_id: i64, session_id: i64, role: String, content: Str
 }
 
 #[tauri::command]
-pub fn run_project_command(project_id: i64, command: String, args: Vec<String>) -> Result<String, String> {
+pub fn run_project_command(
+    app: tauri::AppHandle,
+    project_id: i64,
+    command: String,
+    args: Vec<String>,
+) -> Result<String, String> {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    use tauri::Emitter;
+
     let conn = db::get_connection().map_err(|e| e.to_string())?;
     let disk_path: String = conn
         .query_row(
@@ -184,7 +193,7 @@ pub fn run_project_command(project_id: i64, command: String, args: Vec<String>) 
 
     #[cfg(target_os = "windows")]
     let mut cmd = {
-        let mut c = std::process::Command::new("powershell");
+        let mut c = Command::new("powershell");
         c.arg("-Command");
         let full_cmd = format!("{} {}", command, args.join(" "));
         c.arg(full_cmd);
@@ -193,18 +202,62 @@ pub fn run_project_command(project_id: i64, command: String, args: Vec<String>) 
 
     #[cfg(not(target_os = "windows"))]
     let mut cmd = {
-        let mut c = std::process::Command::new(&command);
+        let mut c = Command::new(&command);
         c.args(args);
         c
     };
 
-    let output = cmd
-        .current_dir(disk_path)
-        .output()
-        .map_err(|e| e.to_string())?;
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    cmd.current_dir(disk_path);
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    
-    Ok(format!("{}\n{}", stdout, stderr))
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+
+    let stdout = child.stdout.take().ok_or_else(|| "Failed to capture stdout".to_string())?;
+    let stderr = child.stderr.take().ok_or_else(|| "Failed to capture stderr".to_string())?;
+
+    let app_clone = app.clone();
+    let stdout_thread = std::thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines().flatten() {
+            let _ = app_clone.emit("agent-console-out", line);
+        }
+    });
+
+    let app_clone2 = app.clone();
+    let stderr_thread = std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines().flatten() {
+            let _ = app_clone2.emit("agent-console-out", line);
+        }
+    });
+
+    let is_run_cmd = command.contains("run") || args.iter().any(|a| a.contains("run"));
+
+    if is_run_cmd {
+        let start_time = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let _ = stdout_thread.join();
+                    let _ = stderr_thread.join();
+                    return Ok(format!("Command exited early with status: {}", status));
+                }
+                Ok(None) => {
+                    if start_time.elapsed().as_secs() >= 4 {
+                        return Ok("Process launched and running in the background.".to_string());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(e) => {
+                    return Err(e.to_string());
+                }
+            }
+        }
+    } else {
+        let status = child.wait().map_err(|e| e.to_string())?;
+        let _ = stdout_thread.join();
+        let _ = stderr_thread.join();
+        Ok(format!("Command finished with status: {}", status))
+    }
 }

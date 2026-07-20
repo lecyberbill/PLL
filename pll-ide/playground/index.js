@@ -145,6 +145,13 @@ async function main() {
     // Bind resize handler
     initResizeHandles();
     
+    // Listen to agent terminal command real-time output
+    if (window.__TAURI__) {
+        window.__TAURI__.event.listen('agent-console-out', (event) => {
+            logToTerminal(event.payload, 'agent-console-line');
+        });
+    }
+    
     // Set default file
     state.activeFile = 'logic_flow.agent';
     set_virtual_file('logic_flow.agent', '');
