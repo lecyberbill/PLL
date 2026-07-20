@@ -68,9 +68,14 @@ export function initResizeHandles(editor, monacoDiffEditor) {
         document.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
             const sidebarPane = document.getElementById('sidebar-files');
-            let newW = e.clientX;
-            newW = Math.max(150, Math.min(400, newW));
-            sidebarPane.style.width = newW + 'px';
+            if (sidebarPane) {
+                const rect = sidebarPane.getBoundingClientRect();
+                let newW = e.clientX - rect.left;
+                newW = Math.max(150, Math.min(450, newW));
+                sidebarPane.style.width = newW + 'px';
+                if (state.editor) state.editor.layout();
+                if (state.monacoDiffEditor) state.monacoDiffEditor.layout();
+            }
         });
         document.addEventListener('mouseup', () => {
             if (isDragging) {
@@ -108,7 +113,7 @@ export function initResizeHandles(editor, monacoDiffEditor) {
                 resultsPane.style.flex = 'none';
                 editorPane.style.flex = '1';
             } else {
-                const totalW = document.body.clientWidth - sidebarPane.offsetWidth - elResizeHandleLeft.offsetWidth - elResizeHandle.offsetWidth;
+                const totalW = document.body.clientWidth - (sidebarPane ? sidebarPane.offsetWidth : 0) - (elResizeHandleLeft ? elResizeHandleLeft.offsetWidth : 0) - elResizeHandle.offsetWidth;
                 let resultsW = document.body.clientWidth - e.clientX;
                 resultsW = Math.max(250, Math.min(totalW - 250, resultsW));
                 resultsPane.style.width = resultsW + 'px';
