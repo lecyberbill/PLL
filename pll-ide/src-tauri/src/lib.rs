@@ -4,6 +4,7 @@ mod commands {
     pub mod fs_git;
     pub mod llm;
     pub mod pll_exec;
+    pub mod agentic;
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -39,7 +40,13 @@ pub fn run() {
         commands::fs_git::git_diff,
         commands::fs_git::git_show,
         commands::llm::chat_completion,
-        commands::pll_exec::run_pll_code
+        commands::pll_exec::run_pll_code,
+        commands::agentic::list_sessions,
+        commands::agentic::create_session,
+        commands::agentic::get_session,
+        commands::agentic::archive_session,
+        commands::agentic::get_conversations,
+        commands::agentic::save_message
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

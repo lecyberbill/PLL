@@ -110,6 +110,40 @@ export async function api(path, options = {}) {
             const body = JSON.parse(options.body || '{}');
             return await invoke('run_pll_code', { code: body.code });
         }
+
+        // 5. Agentic Sessions and Conversations endpoints
+        if (pathname.startsWith('/api/agentic/projects/') && pathname.endsWith('/sessions/new')) {
+            const projectId = parseInt(pathname.split('/')[4]);
+            return await invoke('create_session', { projectId });
+        }
+        if (pathname.startsWith('/api/agentic/projects/') && pathname.endsWith('/sessions')) {
+            const projectId = parseInt(pathname.split('/')[4]);
+            return await invoke('list_sessions', { projectId });
+        }
+        if (pathname.startsWith('/api/agentic/sessions/') && pathname.endsWith('/conversations')) {
+            const sessionId = parseInt(pathname.split('/')[4]);
+            return await invoke('get_conversations', { sessionId });
+        }
+        if (pathname.startsWith('/api/agentic/sessions/') && pathname.endsWith('/archive')) {
+            const sessionId = parseInt(pathname.split('/')[4]);
+            return await invoke('archive_session', { sessionId });
+        }
+        if (pathname.startsWith('/api/agentic/sessions/')) {
+            const parts = pathname.split('/');
+            if (parts.length === 5) {
+                const sessionId = parseInt(parts[4]);
+                return await invoke('get_session', { sessionId });
+            }
+        }
+        if (pathname === '/api/agentic/conversations' && options.method === 'POST') {
+            const body = JSON.parse(options.body || '{}');
+            return await invoke('save_message', { 
+                projectId: parseInt(body.projectId), 
+                sessionId: parseInt(body.sessionId), 
+                role: body.role, 
+                content: body.content 
+            });
+        }
     }
     
     const headers = { 'Content-Type': 'application/json', ...options.headers };

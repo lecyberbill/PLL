@@ -29,7 +29,8 @@ import {
     loadAgenticHistory,
     loadSessions,
     runReActLoopClient,
-    closeNodeDetailsDrawer
+    closeNodeDetailsDrawer,
+    saveConversationMessage
 } from './agent.js';
 
 // DOM Element bindings
@@ -68,9 +69,12 @@ const elBtnGcaClear = document.getElementById('btn-gca-clear');
 async function sendAgenticMessage() {
     const msg = elAgenticInput.value.trim();
     if (!msg) return;
+    if (!await ensureProjectForAgentic()) return;
+    
     elAgenticInput.value = '';
     addAgenticMessage('user', msg);
-    if (!await ensureProjectForAgentic()) return;
+    await saveConversationMessage('user', msg);
+    
     const backend = elSettingsBackend.value;
 
     const placeholder = addAgenticMessage('system', '🤖 Agent en cours...');

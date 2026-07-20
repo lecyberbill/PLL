@@ -190,6 +190,38 @@ export async function loadSessions() {
     }
 }
 
+export async function getOrCreateActiveSessionId() {
+    if (!state.currentProjectId) return null;
+    const elAgenticSessionSelect = document.getElementById('agentic-session-select');
+    let sessionId = elAgenticSessionSelect ? elAgenticSessionSelect.value : null;
+    if (!sessionId || sessionId === "") {
+        const session = await api(`/api/agentic/projects/${state.currentProjectId}/sessions/new`, { method: 'POST' });
+        sessionId = session.id;
+        await loadSessions();
+        if (elAgenticSessionSelect) elAgenticSessionSelect.value = sessionId;
+    }
+    return sessionId;
+}
+
+export async function saveConversationMessage(role, content) {
+    const sessionId = await getOrCreateActiveSessionId();
+    if (state.currentProjectId && sessionId) {
+        try {
+            await api('/api/agentic/conversations', {
+                method: 'POST',
+                body: JSON.stringify({
+                    projectId: state.currentProjectId,
+                    sessionId: sessionId,
+                    role: role,
+                    content: content
+                })
+            });
+        } catch (e) {
+            console.error('Failed to save message:', e);
+        }
+    }
+}
+
 function syncTabs() {
     const tabsContainer = document.getElementById('agentic-tabs');
     const elAgenticSessionSelect = document.getElementById('agentic-session-select');
@@ -493,14 +525,17 @@ export async function runReActLoopClient(userMessage, backend, placeholder) {
     clearInterval(thinkingTimer);
     placeholder.remove();
     
+    let responseText = '';
     if (finalCode && finalPath) {
         if (!state.filesList.includes(finalPath)) state.filesList.push(finalPath);
-        addAgenticMessage('assistant', `✅ **Terminé** — fichiers créés. Consulte l'onglet Fichiers.`);
+        responseText = `✅ **Terminé** — fichiers créés. Consulte l'onglet Fichiers.`;
     } else if (answer) {
-        addAgenticMessage('assistant', answer);
+        responseText = answer;
     } else {
-        addAgenticMessage('assistant', `✅ Terminé.`);
+        responseText = `✅ Terminé.`;
     }
+    addAgenticMessage('assistant', responseText);
+    await saveConversationMessage('assistant', responseText);
     if (state.currentProjectId) await loadProjectFromServer(state.currentProjectId);
 }
 

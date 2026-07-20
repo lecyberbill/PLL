@@ -115,6 +115,14 @@ pub fn delete_project(project_id: i64, keep_files: Option<bool>) -> Result<(), S
         }
     }
 
+    // Delete associated child records to prevent foreign key errors
+    conn.execute("DELETE FROM conversations WHERE project_id = ?1", [project_id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM agent_sessions WHERE project_id = ?1", [project_id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM artifacts WHERE project_id = ?1", [project_id])
+        .map_err(|e| e.to_string())?;
+
     conn.execute("DELETE FROM projects WHERE id = ?1", [project_id])
         .map_err(|e| e.to_string())?;
     Ok(())
