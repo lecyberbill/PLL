@@ -536,7 +536,25 @@ export async function runReActLoopClient(userMessage, backend, placeholder) {
     }
     addAgenticMessage('assistant', responseText);
     await saveConversationMessage('assistant', responseText);
-    if (state.currentProjectId) await loadProjectFromServer(state.currentProjectId);
+    if (state.currentProjectId) {
+        try {
+            const tree = await api(`/api/projects/${state.currentProjectId}/files`);
+            state.filesList = [];
+            async function walk(nodes) {
+                for (const node of nodes) {
+                    if (node.type === 'dir' && node.children) await walk(node.children);
+                    else if (node.path) {
+                        if (node.content !== undefined) set_virtual_file(node.path, node.content);
+                        state.filesList.push(node.path);
+                    }
+                }
+            }
+            await walk(tree);
+            renderVfsList();
+        } catch (e) {
+            console.error("Failed to reload VFS after agent loop:", e);
+        }
+    }
 }
 
 export function parseToolCallsJS(text) {
