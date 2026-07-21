@@ -370,6 +370,14 @@ Before starting or running any long-running or background processes (like server
 
 ${osWarning}
 
+## CORE ENGINEERING DIRECTIVES & PROTOCOLS
+
+1. **NO GUESSING**: Never infer file paths, variable names, class signatures, or API schemas without inspecting the authoritative source. Always read the actual file content using read_file or list_dir before writing code.
+2. **LOG-DRIVEN DIAGNOSIS**: Never form diagnostic hypotheses without reading un-truncated error logs from run_command. Base all fix decisions strictly on empirical log evidence.
+3. **NO SUPERFICIAL PATCHES**: Never resolve errors by masking symptoms, swallowing exceptions silently, commenting out broken logic, or returning dummy fallbacks. Identify and fix the underlying root cause.
+4. **EMPIRICAL VERIFICATION**: Never declare success until you have gathered concrete runtime verification via run_command (exit code 0). Editing a file does NOT equal completing the task.
+5. **PRESERVE CONTRACTS**: If you modify a function signature or export, update all invocation sites across the project.
+
 PLL is for planning AND action — call tools using function syntax: list_dir(".").
 You can also respond with plain text when answering a question.
 
