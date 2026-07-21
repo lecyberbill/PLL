@@ -148,6 +148,153 @@ pub async fn chat_completion(
         }
     }
 
+fn get_openai_tools_definition() -> serde_json::Value {
+    json!([
+        {
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "description": "Create or overwrite a file with full text content.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Relative file path" },
+                        "content": { "type": "string", "description": "Full file content" }
+                    },
+                    "required": ["path", "content"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a file from the project directory.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Relative file path" }
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "delete_file",
+                "description": "Delete a file from the project.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Relative file path" }
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_dir",
+                "description": "List directory contents.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Directory path, e.g. ." }
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_command",
+                "description": "Execute a shell command inside the project directory and return stdout/stderr.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string", "description": "Executable name, e.g. cargo, npm, python" },
+                        "args": { "type": "array", "items": { "type": "string" }, "description": "Command arguments" },
+                        "cwd": { "type": "string", "description": "Optional subdirectory path" }
+                    },
+                    "required": ["command", "args"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "final_answer",
+                "description": "Output your final response when task is completed.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "text": { "type": "string", "description": "Final response text" }
+                    },
+                    "required": ["text"]
+                }
+            }
+        }
+    ])
+}
+
+fn parse_message_response(choice_message: &serde_json::Value) -> String {
+    let mut out = String::new();
+
+    if let Some(content) = choice_message["content"].as_str() {
+        out.push_str(content);
+    }
+
+    if let Some(tool_calls) = choice_message["tool_calls"].as_array() {
+        for call in tool_calls {
+            let fn_name = call["function"]["name"].as_str().unwrap_or_default();
+            let args_raw = call["function"]["arguments"].as_str().unwrap_or("{}");
+            let args_json: serde_json::Value = serde_json::from_str(args_raw).unwrap_or(json!({}));
+
+            if fn_name == "write_file" {
+                let path = args_json["path"].as_str().unwrap_or_default();
+                let content = args_json["content"].as_str().unwrap_or_default();
+                out.push_str(&format!("\nwrite_file(\"{}\", '''{}''')", path, content));
+            } else if fn_name == "read_file" {
+                let path = args_json["path"].as_str().unwrap_or_default();
+                out.push_str(&format!("\nread_file(\"{}\")", path));
+            } else if fn_name == "delete_file" {
+                let path = args_json["path"].as_str().unwrap_or_default();
+                out.push_str(&format!("\ndelete_file(\"{}\")", path));
+            } else if fn_name == "list_dir" {
+                let path = args_json["path"].as_str().unwrap_or_default();
+                out.push_str(&format!("\nlist_dir(\"{}\")", path));
+            } else if fn_name == "run_command" {
+                let cmd = args_json["command"].as_str().unwrap_or_default();
+                let args_arr = args_json["args"].as_array();
+                let cwd = args_json["cwd"].as_str().unwrap_or_default();
+
+                let mut formatted_args = Vec::new();
+                if let Some(arr) = args_arr {
+                    for item in arr {
+                        if let Some(s) = item.as_str() {
+                            formatted_args.push(format!("\"{}\"", s));
+                        }
+                    }
+                }
+                let args_str = formatted_args.join(", ");
+                if !cwd.is_empty() {
+                    out.push_str(&format!("\nrun_command(\"{}\", [{}], \"{}\")", cmd, args_str, cwd));
+                } else {
+                    out.push_str(&format!("\nrun_command(\"{}\", [{}])", cmd, args_str));
+                }
+            } else if fn_name == "final_answer" {
+                let text = args_json["text"].as_str().unwrap_or_default();
+                out.push_str(&format!("\nfinal_answer(\"{}\")", text));
+            }
+        }
+    }
+
+    out
+}
+
     let client = Client::new();
     let response_text = if selected_backend == "deepseek" {
         let api_key = std::env::var("DP_API_KEY")
@@ -162,6 +309,7 @@ pub async fn chat_completion(
         let body = json!({
             "model": "deepseek-chat",
             "messages": api_messages,
+            "tools": get_openai_tools_definition(),
             "temperature": temp,
             "max_tokens": tokens,
             "stream": false
@@ -180,10 +328,7 @@ pub async fn chat_completion(
         }
 
         let json_resp: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-        json_resp["choices"][0]["message"]["content"]
-            .as_str()
-            .ok_or_else(|| "Failed to extract DeepSeek content".to_string())?
-            .to_string()
+        parse_message_response(&json_resp["choices"][0]["message"])
     } else {
         let lm_url = std::env::var("PLL_LM_STUDIO_URL")
             .unwrap_or_else(|_| "http://localhost:1234/v1/chat/completions".to_string());
@@ -195,6 +340,7 @@ pub async fn chat_completion(
 
         let body = json!({
             "messages": api_messages,
+            "tools": get_openai_tools_definition(),
             "temperature": temp,
             "max_tokens": tokens,
             "stream": false
@@ -212,10 +358,7 @@ pub async fn chat_completion(
         }
 
         let json_resp: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-        json_resp["choices"][0]["message"]["content"]
-            .as_str()
-            .ok_or_else(|| "Failed to extract LM Studio content".to_string())?
-            .to_string()
+        parse_message_response(&json_resp["choices"][0]["message"])
     };
 
     let result_resp = LLMResponse {
