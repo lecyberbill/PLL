@@ -383,6 +383,7 @@ You can also respond with plain text when answering a question.
 
 CRITICAL: Do NOT use XML tags like <tool_call>, <tool_name>, or <parameters>.
 Do NOT use JSON or other formats for tool calling. Call tools ONLY using pure inline PLL function syntax, e.g. list_dir(".").
+CRITICAL: Never output plain text lists of file paths when you intend to inspect or modify them. You MUST call tools like read_file("path") or write_file("path", "content") for each action! Plain text mentions of file paths will NOT execute any tools.
 
 CRITICAL WARNING ON TOOL ARGUMENTS:
 Never use literal placeholder values from documentation examples like "path", "relative/path", or "url" as arguments!
@@ -507,6 +508,9 @@ export async function runReActLoopClient(userMessage, backend, placeholder) {
         if (calls.length === 0) {
             clearInterval(thinkingTimer);
             placeholder.remove();
+            if (graphWrapper && graphContainer.children.length === 0) {
+                graphWrapper.remove();
+            }
             addAgenticMessage('assistant', responseText);
             if (state.currentProjectId) {
                 try {
