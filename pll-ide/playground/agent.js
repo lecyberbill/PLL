@@ -658,11 +658,11 @@ export function parseToolCallsJS(text) {
         });
     }
 
-    const simplePattern = /(read_file|delete_file|list_dir|final_answer)\s*\(\s*(?:'''([\s\S]*?)'''|"""([\s\S]*?)"""|`([\s\S]*?)`|"([\s\S]*?)"|'([\s\S]*?)')\s*\)/g;
+    const simplePattern = /(read_file|delete_file|list_dir|final_answer)\s*\(\s*(?:'''([\s\S]*?)'''|"""([\s\S]*?)"""|`([\s\S]*?)`|"([\s\S]*?)"|'([\s\S]*?)'|([^\)\r\n]+))\s*\)/g;
     simplePattern.lastIndex = 0;
     while ((match = simplePattern.exec(text)) !== null) {
         const tool = match[1];
-        const arg = match[2] || match[3] || match[4] || match[5] || match[6] || "";
+        const arg = (match[2] || match[3] || match[4] || match[5] || match[6] || match[7] || "").trim();
         if (tool === 'read_file' || tool === 'delete_file' || tool === 'list_dir') {
             calls.push({ tool, args: { path: arg } });
         } else if (tool === 'final_answer') {
