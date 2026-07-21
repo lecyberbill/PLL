@@ -688,6 +688,32 @@ export function parseToolCallsJS(text) {
     return calls;
 }
 
+export function parseErrorLocations(output) {
+    if (typeof output !== 'string') return [];
+    const locations = [];
+    const seen = new Set();
+
+    const patterns = [
+        /(?:-->\s*|^\s*|[\s\(\[\"\'])(([a-zA-Z0-9_\-\/\\.]+\.(?:rs|js|ts|py|c|cpp|h|hpp|go|java|pll|toml|json|html|css)))[:\s,]+(?:line\s+)?(\d+)/gmi,
+        /File\s+["']([^"']+)["']\s*,\s*line\s+(\d+)/gi
+    ];
+
+    for (const pattern of patterns) {
+        let match;
+        pattern.lastIndex = 0;
+        while ((match = pattern.exec(output)) !== null) {
+            const filePath = match[1].replace(/\\/g, '/');
+            const lineNum = match[2];
+            const key = `${filePath}:${lineNum}`;
+            if (!seen.has(key) && !filePath.includes('node_modules') && !filePath.includes('.rustup') && !filePath.includes('registry')) {
+                seen.add(key);
+                locations.push({ path: filePath, line: parseInt(lineNum, 10) });
+            }
+        }
+    }
+    return locations;
+}
+
 export async function executeToolJS(tool, args) {
     if (tool === 'write_file') {
         await api(`/api/projects/${state.currentProjectId}/files`, {
@@ -723,7 +749,7 @@ export async function executeToolJS(tool, args) {
         return args.text;
     }
     if (tool === 'run_command') {
-        const res = await api('/api/agentic/run_command', {
+        let res = await api('/api/agentic/run_command', {
             method: 'POST',
             body: JSON.stringify({
                 projectId: state.currentProjectId,
@@ -732,6 +758,14 @@ export async function executeToolJS(tool, args) {
                 cwd: args.cwd || ""
             })
         });
+
+        // Extract universal error locations for any language
+        const errLocs = parseErrorLocations(res);
+        if (errLocs.length > 0) {
+            const locSummary = errLocs.slice(0, 5).map(l => `- [${l.path}] at line ${l.line}`).join('\n');
+            res += `\n\n[Parsed Error Locations]:\n${locSummary}\n[Directive]: Use read_file to inspect these files directly at the reported line numbers and fix the issues immediately.`;
+        }
+
         logToTerminal(`[Agent Command] ❯ ${args.command} ${args.args.join(' ')}${args.cwd ? ` (in ${args.cwd})` : ''}\n${res}`, 'sys-msg');
         return res;
     }
