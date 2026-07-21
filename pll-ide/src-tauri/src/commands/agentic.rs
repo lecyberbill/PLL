@@ -201,11 +201,17 @@ pub fn run_project_command(
 
     #[cfg(target_os = "windows")]
     let mut cmd = {
-        let mut c = Command::new("powershell");
-        c.arg("-Command");
-        let full_cmd = format!("{} {}", command, args.join(" "));
-        c.arg(full_cmd);
-        c
+        if command == "powershell" || command == "cmd" {
+            let mut c = Command::new(&command);
+            c.args(&args);
+            c
+        } else {
+            let mut c = Command::new("powershell");
+            c.arg("-Command");
+            let full_cmd = format!("{} {}", command, args.join(" "));
+            c.arg(full_cmd);
+            c
+        }
     };
 
     #[cfg(not(target_os = "windows"))]
