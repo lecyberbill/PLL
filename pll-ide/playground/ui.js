@@ -256,39 +256,39 @@ export function initCanvasControls() {
     }
 
     canvas.querySelectorAll('.flow-node').forEach(node => makeNodeDraggable(node));
+}
 
-    function makeNodeDraggable(node) {
-        let isDrag = false;
-        let startX = 0, startY = 0;
-        let initialLeft = 0, initialTop = 0;
+export function makeNodeDraggable(node) {
+    let isDrag = false;
+    let startX = 0, startY = 0;
+    let initialLeft = 0, initialTop = 0;
 
-        const header = node.querySelector('.node-header') || node;
-        header.addEventListener('mousedown', (e) => {
-            if (isPanMode) return;
-            isDrag = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            initialLeft = parseInt(node.style.left) || 0;
-            initialTop = parseInt(node.style.top) || 0;
-            node.style.zIndex = 1000;
-            e.stopPropagation();
-        });
+    const header = node.querySelector('.node-header') || node;
+    header.addEventListener('mousedown', (e) => {
+        isDrag = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        initialLeft = parseInt(node.style.left) || 0;
+        initialTop = parseInt(node.style.top) || 0;
+        node.style.zIndex = 1000;
+        e.stopPropagation();
+    });
 
-        document.addEventListener('mousemove', (e) => {
-            if (!isDrag) return;
-            const dx = (e.clientX - startX) / zoom;
-            const dy = (e.clientY - startY) / zoom;
-            node.style.left = `${initialLeft + dx}px`;
-            node.style.top = `${initialTop + dy}px`;
-        });
+    document.addEventListener('mousemove', (e) => {
+        if (!isDrag) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        node.style.left = `${initialLeft + dx}px`;
+        node.style.top = `${initialTop + dy}px`;
+    });
 
-        document.addEventListener('mouseup', () => {
-            if (isDrag) {
-                isDrag = false;
-                node.style.zIndex = '';
-            }
-        });
-    }
+    document.addEventListener('mouseup', () => {
+        if (isDrag) {
+            isDrag = false;
+            node.style.zIndex = '';
+        }
+    });
+}
 
     canvas.addEventListener('mousedown', (e) => {
         if (!isPanMode && e.target !== canvas && e.target.id !== 'canvas-svg') return;
