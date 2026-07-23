@@ -11,8 +11,9 @@ pub struct PllExecResponse {
 }
 
 fn find_pll_cli() -> Option<PathBuf> {
-    // Look in target/release, target/debug, parent, etc.
-    let paths = vec![
+    let mut paths = vec![
+        PathBuf::from("D:/image_to_text/AOL_2/pll-lang/target/debug/pll-cli.exe"),
+        PathBuf::from("D:/image_to_text/AOL_2/pll-lang/target/release/pll-cli.exe"),
         PathBuf::from("../../pll-lang/target/release/pll-cli.exe"),
         PathBuf::from("../../pll-lang/target/release/pll-cli"),
         PathBuf::from("../pll-lang/target/release/pll-cli.exe"),
@@ -22,6 +23,13 @@ fn find_pll_cli() -> Option<PathBuf> {
         PathBuf::from("./pll-cli.exe"),
         PathBuf::from("./pll-cli"),
     ];
+
+    if let Ok(cwd) = std::env::current_dir() {
+        paths.push(cwd.join("../pll-lang/target/debug/pll-cli.exe"));
+        paths.push(cwd.join("../pll-lang/target/release/pll-cli.exe"));
+        paths.push(cwd.join("pll-lang/target/debug/pll-cli.exe"));
+        paths.push(cwd.join("pll-lang/target/release/pll-cli.exe"));
+    }
 
     for path in paths {
         if path.exists() {
