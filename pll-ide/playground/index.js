@@ -221,7 +221,7 @@ export function updateVariablesInspector() {
 // Event Bindings
 if (elBtnRunCode) elBtnRunCode.onclick = async () => {
     showToast("Exécution du code PLL en cours...", "info");
-    // call code runner
+    await runPllCode();
 };
 if (elBtnSaveFile) elBtnSaveFile.onclick = async () => {
     await saveProjectToServer();
@@ -254,6 +254,7 @@ if (elBtnNewProject) {
 if (elProjectModalCancel) {
     elProjectModalCancel.onclick = () => elProjectModal.classList.remove('open');
 }
+
 
 if (elProjectModalSave) {
     elProjectModalSave.onclick = async () => {
