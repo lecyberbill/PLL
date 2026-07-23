@@ -226,6 +226,22 @@ fn get_openai_tools_definition() -> serde_json::Value {
         {
             "type": "function",
             "function": {
+                "name": "add_flow_node",
+                "description": "Add a new visual agent or workflow node to the Orchestrator DAG canvas.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": { "type": "string", "description": "Title of the node" },
+                        "node_type": { "type": "string", "description": "Type: agent, trigger, validator, pll_vm" },
+                        "model_or_desc": { "type": "string", "description": "Model description or purpose" }
+                    },
+                    "required": ["title", "node_type"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "final_answer",
                 "description": "Output your final response when task is completed.",
                 "parameters": {
@@ -285,6 +301,11 @@ fn parse_message_response(choice_message: &serde_json::Value) -> String {
                 } else {
                     out.push_str(&format!("\nrun_command(\"{}\", [{}])", cmd, args_str));
                 }
+            } else if fn_name == "add_flow_node" {
+                let title = args_json["title"].as_str().unwrap_or_default();
+                let ntype = args_json["node_type"].as_str().unwrap_or("agent");
+                let desc = args_json["model_or_desc"].as_str().unwrap_or_default();
+                out.push_str(&format!("\nadd_flow_node(\"{}\", \"{}\", \"{}\")", title, ntype, desc));
             } else if fn_name == "final_answer" {
                 let text = args_json["text"].as_str().unwrap_or_default();
                 out.push_str(&format!("\nfinal_answer(\"{}\")", text));

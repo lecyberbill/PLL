@@ -752,6 +752,39 @@ export async function executeToolJS(tool, args) {
     if (tool === 'final_answer') {
         return args.text;
     }
+    if (tool === 'add_flow_node') {
+        const canvas = document.getElementById('orchestrator-canvas');
+        if (!canvas) return "Canvas not found.";
+        const newNodeId = `node-agent-${Date.now().toString().slice(-4)}`;
+        const newNode = document.createElement('div');
+        newNode.className = `flow-node flow-node-${args.node_type || 'agent'}`;
+        newNode.id = newNodeId;
+        newNode.style.cssText = `left: ${200 + Math.random() * 250}px; top: ${120 + Math.random() * 150}px; cursor: move;`;
+        
+        const typeColors = { agent: '#6366f1', trigger: '#f59e0b', validator: '#ec4899', pll_vm: '#10b981' };
+        const color = typeColors[args.node_type] || '#6366f1';
+
+        newNode.innerHTML = `
+            <div class="node-header">
+                <span class="node-indicator" style="background:${color}; box-shadow:0 0 6px ${color};"></span>
+                <span class="node-title">${escHtml(args.title || 'Sub-Agent Node')}</span>
+                <span class="node-menu">⋮⋮</span>
+            </div>
+            <div class="node-body">
+                <div class="node-field">
+                    <label>${escHtml(args.node_type || 'Agent')}</label>
+                    <div class="field-val">${escHtml(args.model_or_desc || 'DeepSeek V4 Sub-Agent Process')}</div>
+                </div>
+            </div>
+            <div class="node-port port-input"></div>
+            <div class="node-port port-output"></div>
+        `;
+        canvas.appendChild(newNode);
+        
+        // Show orchestrator tab
+        document.getElementById('nav-item-orchestrator')?.click();
+        return `Flow Node '${args.title}' (${args.node_type}) created successfully on Orchestrator canvas.`;
+    }
     if (tool === 'run_command') {
         let res = await api('/api/agentic/run_command', {
             method: 'POST',
