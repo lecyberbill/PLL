@@ -674,6 +674,18 @@ export function parseToolCallsJS(text) {
         }
     }
 
+    const nodePattern = /add_flow_node\s*\(\s*["'`]([^"'`]+)["'`]\s*,\s*["'`]([^"'`]+)["'`]\s*(?:,\s*["'`]([^"'`]+)["'`]\s*)?\)/g;
+    let nodeMatch;
+    while ((nodeMatch = nodePattern.exec(text)) !== null) {
+        const title = nodeMatch[1];
+        const node_type = nodeMatch[2];
+        const model_or_desc = nodeMatch[3] || "";
+        calls.push({
+            tool: "add_flow_node",
+            args: { title, node_type, model_or_desc }
+        });
+    }
+
     let rcMatch;
     const runCommandPattern = /run_command\s*\(\s*["'`]([^"'`]+)["'`]\s*,\s*\[([\s\S]*?)\]\s*(?:,\s*["'`]([^"'`]+)["'`]\s*)?\)/g;
     while ((rcMatch = runCommandPattern.exec(text)) !== null) {
