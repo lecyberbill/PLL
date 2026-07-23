@@ -120,8 +120,26 @@ async function runPllCode() {
 
 // Global initialization
 async function main() {
-    // 1. Initialize Monaco Editor
-    await initEditor();
+    try {
+        const monacoInstance = await loadMonaco();
+        state.monaco = monacoInstance;
+        const elContainer = document.getElementById('monaco-editor');
+        if (elContainer) {
+            state.editor = monacoInstance.editor.create(elContainer, {
+                value: '', language: 'python', theme: 'pll-dark',
+                fontSize: 14, fontFamily: "'Fira Code', monospace",
+                minimap: { enabled: false }, lineNumbers: 'on',
+                automaticLayout: true, tabSize: 4, insertSpaces: true,
+                bracketPairColorization: { enabled: true },
+                renderLineHighlight: 'line', cursorBlinking: 'smooth',
+            });
+            state.editor.onDidChangeModelContent(() => {
+                if (state.activeFile) set_virtual_file(state.activeFile, state.editor.getValue());
+            });
+        }
+    } catch (e) {
+        console.error("Monaco Editor failed to load:", e);
+    }
     
     // Initialize UI controls
     initResizeHandles();
