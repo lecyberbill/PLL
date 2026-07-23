@@ -256,6 +256,28 @@ export function initCanvasControls() {
     }
 
     canvas.querySelectorAll('.flow-node').forEach(node => makeNodeDraggable(node));
+
+    canvas.addEventListener('mousedown', (e) => {
+        if (!isPanMode && e.target !== canvas && e.target.id !== 'canvas-svg') return;
+        isPanning = true;
+        startX = e.clientX - panX;
+        startY = e.clientY - panY;
+        if (isPanMode) canvas.style.cursor = 'grabbing';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isPanning) return;
+        panX = e.clientX - startX;
+        panY = e.clientY - startY;
+        applyTransform();
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isPanning) {
+            isPanning = false;
+            if (isPanMode) canvas.style.cursor = 'grab';
+        }
+    });
 }
 
 export function makeNodeDraggable(node) {
@@ -286,29 +308,6 @@ export function makeNodeDraggable(node) {
         if (isDrag) {
             isDrag = false;
             node.style.zIndex = '';
-        }
-    });
-}
-
-    canvas.addEventListener('mousedown', (e) => {
-        if (!isPanMode && e.target !== canvas && e.target.id !== 'canvas-svg') return;
-        isPanning = true;
-        startX = e.clientX - panX;
-        startY = e.clientY - panY;
-        if (isPanMode) canvas.style.cursor = 'grabbing';
-    });
-
-    document.addEventListener('mousemove', (e) => {
-        if (!isPanning) return;
-        panX = e.clientX - startX;
-        panY = e.clientY - startY;
-        applyTransform();
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (isPanning) {
-            isPanning = false;
-            if (isPanMode) canvas.style.cursor = 'grab';
         }
     });
 }
