@@ -189,6 +189,7 @@ export function initCanvasControls() {
             svg.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
             svg.style.transformOrigin = '0 0';
         }
+        renderCanvasConnections();
     };
 
     const btnZoomIn = document.getElementById('ctrl-zoom-in');
@@ -287,8 +288,29 @@ export function makeNodeDraggable(node) {
     let startX = 0, startY = 0;
     let initialLeft = 0, initialTop = 0;
 
+    // Add delete button if not present
     const header = node.querySelector('.node-header') || node;
+    if (!node.querySelector('.node-delete-btn') && node.id !== 'node-trigger') {
+        const delBtn = document.createElement('span');
+        delBtn.className = 'node-delete-btn';
+        delBtn.textContent = '✕';
+        delBtn.style.cssText = 'margin-left: auto; cursor: pointer; color: var(--text-muted); font-size: 11px; padding: 0 4px; transition: color 0.15s;';
+        delBtn.title = 'Supprimer le nœud';
+        delBtn.onmouseover = () => delBtn.style.color = '#ef4444';
+        delBtn.onmouseout = () => delBtn.style.color = 'var(--text-muted)';
+        delBtn.onclick = (e) => {
+            e.stopPropagation();
+            removeNodeConnections(node.id);
+            node.remove();
+            saveCanvasState();
+            renderCanvasConnections();
+            showToast('Nœud supprimé du canevas', 'info');
+        };
+        header.appendChild(delBtn);
+    }
+
     header.addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('node-delete-btn')) return;
         isDrag = true;
         startX = e.clientX;
         startY = e.clientY;
@@ -304,6 +326,7 @@ export function makeNodeDraggable(node) {
         const dy = e.clientY - startY;
         node.style.left = `${initialLeft + dx}px`;
         node.style.top = `${initialTop + dy}px`;
+        renderCanvasConnections();
     });
 
     document.addEventListener('mouseup', () => {
@@ -311,7 +334,85 @@ export function makeNodeDraggable(node) {
             isDrag = false;
             node.style.zIndex = '';
             saveCanvasState();
+            renderCanvasConnections();
         }
+    });
+}
+
+export function connectNodes(fromId, toId) {
+    const projId = state.currentProjectId || 'default';
+    const raw = localStorage.getItem(`pll-canvas-links-${projId}`);
+    let links = [];
+    if (raw) {
+        try { links = JSON.parse(raw); } catch (e) {}
+    }
+    if (!links.some(l => l.from === fromId && l.to === toId)) {
+        links.push({ from: fromId, to: toId });
+        localStorage.setItem(`pll-canvas-links-${projId}`, JSON.stringify(links));
+        renderCanvasConnections();
+        showToast('Nœuds reliés avec succès', 'success');
+    }
+}
+
+export function removeNodeConnections(nodeId) {
+    const projId = state.currentProjectId || 'default';
+    const raw = localStorage.getItem(`pll-canvas-links-${projId}`);
+    if (!raw) return;
+    try {
+        let links = JSON.parse(raw);
+        links = links.filter(l => l.from !== nodeId && l.to !== nodeId);
+        localStorage.setItem(`pll-canvas-links-${projId}`, JSON.stringify(links));
+    } catch (e) {}
+}
+
+export function renderCanvasConnections() {
+    const svg = document.getElementById('canvas-svg');
+    const canvas = document.getElementById('orchestrator-canvas');
+    if (!svg || !canvas) return;
+    svg.innerHTML = '';
+
+    const projId = state.currentProjectId || 'default';
+    const rawLinks = localStorage.getItem(`pll-canvas-links-${projId}`);
+    
+    // Default connection if no links saved yet
+    let links = [
+        { from: 'node-trigger', to: 'node-agent' }
+    ];
+    if (rawLinks) {
+        try {
+            const parsed = JSON.parse(rawLinks);
+            if (Array.isArray(parsed) && parsed.length > 0) links = parsed;
+        } catch (e) {}
+    }
+
+    const canvasRect = canvas.getBoundingClientRect();
+
+    links.forEach(link => {
+        const fromEl = document.getElementById(link.from);
+        const toEl = document.getElementById(link.to);
+        if (!fromEl || !toEl) return;
+
+        const fromPort = fromEl.querySelector('.port-output') || fromEl;
+        const toPort = toEl.querySelector('.port-input') || toEl;
+
+        const fromRect = fromPort.getBoundingClientRect();
+        const toRect = toPort.getBoundingClientRect();
+
+        const x1 = fromRect.left + fromRect.width / 2 - canvasRect.left;
+        const y1 = fromRect.top + fromRect.height / 2 - canvasRect.top;
+        const x2 = toRect.left + toRect.width / 2 - canvasRect.left;
+        const y2 = toRect.top + toRect.height / 2 - canvasRect.top;
+
+        const dx = Math.max(30, Math.abs(x2 - x1) * 0.5);
+        const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('stroke', 'var(--accent-color)');
+        path.setAttribute('stroke-width', '2.5');
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(path);
     });
 }
 

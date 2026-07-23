@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { api } from './api.js';
-import { logToTerminal, escHtml, makeNodeDraggable, saveCanvasState } from './ui.js';
+import { logToTerminal, escHtml, makeNodeDraggable, saveCanvasState, connectNodes, removeNodeConnections, renderCanvasConnections } from './ui.js';
 import { loadProjectFromServer, renderVfsList } from './editor.js';
 import { set_virtual_file, get_virtual_file } from './pkg/pll_wasm.js';
 
@@ -798,6 +798,21 @@ export async function executeToolJS(tool, args) {
         // Show orchestrator tab
         document.getElementById('nav-item-orchestrator')?.click();
         return `Flow Node '${args.title}' (${args.node_type}) created successfully on Orchestrator canvas.`;
+    }
+    if (tool === 'connect_flow_nodes') {
+        connectNodes(args.from_id, args.to_id);
+        return `Connected flow node ${args.from_id} to ${args.to_id}.`;
+    }
+    if (tool === 'delete_flow_node') {
+        const el = document.getElementById(args.node_id);
+        if (el) {
+            removeNodeConnections(args.node_id);
+            el.remove();
+            saveCanvasState();
+            renderCanvasConnections();
+            return `Flow node ${args.node_id} deleted successfully.`;
+        }
+        return `Node ${args.node_id} not found.`;
     }
     if (tool === 'run_command') {
         let res = await api('/api/agentic/run_command', {
