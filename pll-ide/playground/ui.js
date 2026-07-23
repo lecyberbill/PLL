@@ -169,6 +169,8 @@ export function initCanvasControls() {
     const canvas = document.getElementById('orchestrator-canvas');
     if (!canvas) return;
 
+    loadCanvasState();
+
     let zoom = 1;
     let panX = 0;
     let panY = 0;
@@ -308,8 +310,79 @@ export function makeNodeDraggable(node) {
         if (isDrag) {
             isDrag = false;
             node.style.zIndex = '';
+            saveCanvasState();
         }
     });
+}
+
+export function saveCanvasState() {
+    const canvas = document.getElementById('orchestrator-canvas');
+    if (!canvas) return;
+    const projId = state.currentProjectId || 'default';
+    const nodes = [];
+    canvas.querySelectorAll('.flow-node').forEach(node => {
+        const id = node.id;
+        const left = node.style.left;
+        const top = node.style.top;
+        const title = node.querySelector('.node-title')?.textContent || '';
+        const fieldVal = node.querySelector('.field-val')?.textContent || '';
+        const nodeTypeLabel = node.querySelector('.node-field label')?.textContent || '';
+        const isDefault = (id === 'node-trigger' || id === 'node-agent');
+        nodes.push({ id, left, top, title, fieldVal, nodeTypeLabel, isDefault, className: node.className });
+    });
+    localStorage.setItem(`pll-canvas-nodes-${projId}`, JSON.stringify(nodes));
+}
+
+export function loadCanvasState() {
+    const canvas = document.getElementById('orchestrator-canvas');
+    if (!canvas) return;
+    const projId = state.currentProjectId || 'default';
+    const raw = localStorage.getItem(`pll-canvas-nodes-${projId}`);
+    if (!raw) return;
+    try {
+        const nodes = JSON.parse(raw);
+        if (!Array.isArray(nodes) || nodes.length === 0) return;
+        
+        canvas.querySelectorAll('.flow-node').forEach(node => {
+            if (node.id !== 'node-trigger' && node.id !== 'node-agent') {
+                node.remove();
+            }
+        });
+
+        nodes.forEach(n => {
+            if (n.isDefault) {
+                const el = document.getElementById(n.id);
+                if (el) {
+                    if (n.left) el.style.left = n.left;
+                    if (n.top) el.style.top = n.top;
+                }
+            } else {
+                const newNode = document.createElement('div');
+                newNode.className = n.className || 'flow-node flow-node-agent';
+                newNode.id = n.id;
+                newNode.style.cssText = `left: ${n.left || '200px'}; top: ${n.top || '150px'}; cursor: move;`;
+                newNode.innerHTML = `
+                    <div class="node-header">
+                        <span class="node-indicator" style="background:#6366f1; box-shadow:0 0 6px #6366f1;"></span>
+                        <span class="node-title">${escHtml(n.title)}</span>
+                        <span class="node-menu">⋮⋮</span>
+                    </div>
+                    <div class="node-body">
+                        <div class="node-field">
+                            <label>${escHtml(n.nodeTypeLabel || 'Agent')}</label>
+                            <div class="field-val">${escHtml(n.fieldVal || '')}</div>
+                        </div>
+                    </div>
+                    <div class="node-port port-input"></div>
+                    <div class="node-port port-output"></div>
+                `;
+                canvas.appendChild(newNode);
+                makeNodeDraggable(newNode);
+            }
+        });
+    } catch (e) {
+        console.error("Failed to restore canvas nodes state:", e);
+    }
 }
 
 export function initSidebarAccordions() {

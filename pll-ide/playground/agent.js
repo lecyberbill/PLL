@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { api } from './api.js';
-import { logToTerminal, escHtml, makeNodeDraggable } from './ui.js';
+import { logToTerminal, escHtml, makeNodeDraggable, saveCanvasState } from './ui.js';
 import { loadProjectFromServer, renderVfsList } from './editor.js';
 import { set_virtual_file, get_virtual_file } from './pkg/pll_wasm.js';
 
@@ -793,6 +793,7 @@ export async function executeToolJS(tool, args) {
         `;
         canvas.appendChild(newNode);
         makeNodeDraggable(newNode);
+        saveCanvasState();
         
         // Show orchestrator tab
         document.getElementById('nav-item-orchestrator')?.click();
