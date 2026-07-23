@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { api } from './api.js';
-import { escHtml, logToTerminal, logToExecutionLogs, switchTab, switchSidebarTab, initResizeHandles } from './ui.js';
+import { escHtml, logToTerminal, logToExecutionLogs, switchTab, switchSidebarTab, initResizeHandles, initCanvasControls, initSidebarAccordions, togglePanelFullscreen, showToast } from './ui.js';
 import { loadMonaco, detectLanguage } from './editor-setup.js';
 import { set_virtual_file, get_virtual_file } from './pkg/pll_wasm.js';
 import {
