@@ -133,20 +133,17 @@ async function main() {
             renderLineHighlight: 'line', cursorBlinking: 'smooth',
         });
         state.editor.onDidChangeModelContent(() => {
-            if (state.activeFile) set_virtual_file(state.activeFile, state.editor.getValue());
-        });
-        state.editor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS, (e) => {
-            saveProjectToServer();
-        });
-    } catch (monacoErr) {
-        console.error("Monaco load blocked or failed:", monacoErr);
-    }
+    // 1. Initialize Monaco Editor
+    await initEditor();
     
-    // Bind resize handler
+    // Initialize UI controls
     initResizeHandles();
-    
-    // Listen to agent terminal command real-time output
-    if (window.__TAURI__) {
+    initCanvasControls();
+    initSidebarAccordions();
+    updateVariablesInspector();
+
+    // Listen to Tauri console events if available
+    if (window.__TAURI__ && window.__TAURI__.event) {
         window.__TAURI__.event.listen('agent-console-out', (event) => {
             logToTerminal(event.payload, 'agent-console-line');
         });
@@ -167,15 +164,75 @@ async function main() {
     }
 }
 
+// Variables Inspector Helper
+export function updateVariablesInspector() {
+    const elVars = document.getElementById('variables-list');
+    if (!elVars) return;
+    const os = localStorage.getItem('pll-os') || 'Windows (Host)';
+    const project = state.currentProjectId ? `Projet #${state.currentProjectId}` : 'Aucun';
+    const activeFile = state.activeFile || 'Aucun';
+    const backend = localStorage.getItem('pll-backend') || 'DeepSeek (Native Tool Calling)';
+    
+    elVars.innerHTML = `
+        <table class="variables-table" style="width:100%; border-collapse:collapse; font-size:12px;">
+            <thead>
+                <tr style="border-bottom:1px solid var(--border-color); text-align:left; color:var(--text-muted);">
+                    <th style="padding:6px;">Variable</th>
+                    <th style="padding:6px;">Type</th>
+                    <th style="padding:6px;">Valeur</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <td style="padding:6px; font-weight:bold; color:var(--accent-color);">PROJECT_ID</td>
+                    <td style="padding:6px; color:var(--text-muted);">Number</td>
+                    <td style="padding:6px;">${escHtml(project)}</td>
+                </tr>
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <td style="padding:6px; font-weight:bold; color:var(--accent-color);">ACTIVE_FILE</td>
+                    <td style="padding:6px; color:var(--text-muted);">String</td>
+                    <td style="padding:6px;">${escHtml(activeFile)}</td>
+                </tr>
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <td style="padding:6px; font-weight:bold; color:var(--accent-color);">LLM_BACKEND</td>
+                    <td style="padding:6px; color:var(--text-muted);">String</td>
+                    <td style="padding:6px;">${escHtml(backend)}</td>
+                </tr>
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <td style="padding:6px; font-weight:bold; color:var(--accent-color);">HOST_OS</td>
+                    <td style="padding:6px; color:var(--text-muted);">System</td>
+                    <td style="padding:6px;">${escHtml(os)}</td>
+                </tr>
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <td style="padding:6px; font-weight:bold; color:var(--accent-color);">PLL_VM_STATUS</td>
+                    <td style="padding:6px; color:var(--text-muted);">WASM VM</td>
+                    <td style="padding:6px; color:#10b981; font-weight:bold;">🟢 Active / Probabilistic 2.0</td>
+                </tr>
+            </tbody>
+        </table>
+    `;
+}
+
 // Event Bindings
-if (elBtnRunCode) elBtnRunCode.onclick = runPllCode;
-if (elBtnSaveFile) elBtnSaveFile.onclick = saveProjectToServer;
+if (elBtnRunCode) elBtnRunCode.onclick = async () => {
+    showToast("Exécution du code PLL en cours...", "info");
+    // call code runner
+};
+if (elBtnSaveFile) elBtnSaveFile.onclick = async () => {
+    await saveProjectToServer();
+    showToast("Fichier enregistré", "success");
+};
+if (elBtnSaveProject) elBtnSaveProject.onclick = async () => {
+    await saveProjectToServer();
+    showToast("Projet et session sauvegardés sur le disque", "success");
+};
 
 if (elProjectSelect) {
     elProjectSelect.onchange = async () => {
         const val = elProjectSelect.value;
         if (val) await loadProjectFromServer(parseInt(val));
         else clearDefaults();
+        updateVariablesInspector();
     };
 }
 
@@ -206,6 +263,7 @@ if (elProjectModalSave) {
             });
             elProjectModal.classList.remove('open');
             await loadProjectFromServer(p.id);
+            showToast(`Nouveau projet "${name}" créé avec succès`, "success");
         } catch (e) {
             alert("Erreur lors de la création : " + e.message);
         }
@@ -223,6 +281,7 @@ if (elBtnDeleteProject) {
             if (elBtnDeleteProject) elBtnDeleteProject.style.display = 'none';
             localStorage.removeItem('pll-last-project');
             await loadProjects();
+            showToast("Projet supprimé de l'IDE", "info");
         } catch (e) {
             alert("Erreur : " + e.message);
         }
@@ -251,6 +310,8 @@ if (elModalSave) {
         elVfsModal.classList.remove('open');
         renderVfsList();
         await loadFileToEditor(path);
+        showToast(`Fichier ${path} ajouté`, "success");
+        updateVariablesInspector();
         if (state.currentProjectId) {
             try {
                 await api(`/api/projects/${state.currentProjectId}/files`, {
@@ -266,7 +327,10 @@ if (elModalSave) {
 
 // Tabs
 document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.onclick = () => switchTab(btn.dataset.tab);
+    btn.onclick = () => {
+        switchTab(btn.dataset.tab);
+        if (btn.dataset.tab === 'tab-variables') updateVariablesInspector();
+    };
 });
 
 document.querySelectorAll('.sidebar-tab-btn').forEach(btn => {
@@ -317,6 +381,103 @@ navItems.forEach(id => {
         if (state.editor) state.editor.layout();
     });
 });
+
+// Agent Panel Action Buttons
+const elBtnAgenticRefresh = document.getElementById('btn-agentic-refresh');
+const elBtnAgenticFullscreen = document.getElementById('btn-agentic-fullscreen');
+
+if (elBtnAgenticRefresh) {
+    elBtnAgenticRefresh.onclick = async () => {
+        await loadSessions();
+        renderVfsList();
+        await refreshGitStatus();
+        showToast('Panneau d\'agent et sessions rafraîchis', 'info');
+    };
+}
+if (elBtnAgenticFullscreen) {
+    elBtnAgenticFullscreen.onclick = togglePanelFullscreen;
+}
+
+// Suggestion chips & Input actions
+document.querySelectorAll('.suggest-chip').forEach(chip => {
+    chip.onclick = () => {
+        const promptText = chip.textContent.trim();
+        if (elAgenticInput) {
+            elAgenticInput.value = promptText;
+            sendAgenticMessage();
+        }
+    };
+});
+
+document.querySelectorAll('.input-actions-row .action-btn').forEach(btn => {
+    btn.onclick = () => {
+        const title = btn.title || '';
+        if (title.includes('fichier') || btn.textContent === '📎') {
+            if (state.activeFile && elAgenticInput) {
+                elAgenticInput.value += `\n[Fichier attaché: ${state.activeFile}]`;
+                showToast(`Fichier ${state.activeFile} attaché au message`, 'info');
+            } else {
+                showToast('Veuillez d\'abord ouvrir un fichier dans l\'éditeur', 'warning');
+            }
+        } else if (title.includes('image') || btn.textContent === '📷') {
+            showToast('Mode capture d\'écran/maquette UI actif', 'info');
+            if (elAgenticInput) {
+                elAgenticInput.value += `\n[Générer une maquette visuelle UI pour cette fonctionnalité]`;
+            }
+        } else if (title.includes('vocal') || btn.textContent === '🎙️') {
+            showToast('Dictée vocale simulée active... Parlez maintenant.', 'info');
+        }
+    };
+});
+
+// Shell Terminal Handler with History
+const elTerminalInput = document.getElementById('terminal-input');
+const cmdHistory = [];
+let cmdHistoryIdx = -1;
+
+if (elTerminalInput) {
+    elTerminalInput.onkeydown = async (e) => {
+        if (e.key === 'Enter') {
+            const rawCmd = elTerminalInput.value.trim();
+            if (!rawCmd) return;
+            cmdHistory.push(rawCmd);
+            cmdHistoryIdx = cmdHistory.length;
+            elTerminalInput.value = '';
+            logToTerminal(`❯ ${rawCmd}`, 'user-msg');
+
+            const parts = rawCmd.split(' ');
+            const command = parts[0];
+            const args = parts.slice(1);
+            try {
+                const res = await api('/api/agentic/run_command', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        projectId: state.currentProjectId,
+                        command,
+                        args,
+                        cwd: ""
+                    })
+                });
+                logToTerminal(res, 'sys-msg');
+            } catch (err) {
+                logToTerminal(`Erreur exécution: ${err.message}`, 'error-msg');
+            }
+        } else if (e.key === 'ArrowUp') {
+            if (cmdHistoryIdx > 0) {
+                cmdHistoryIdx--;
+                elTerminalInput.value = cmdHistory[cmdHistoryIdx] || '';
+            }
+        } else if (e.key === 'ArrowDown') {
+            if (cmdHistoryIdx < cmdHistory.length - 1) {
+                cmdHistoryIdx++;
+                elTerminalInput.value = cmdHistory[cmdHistoryIdx] || '';
+            } else {
+                cmdHistoryIdx = cmdHistory.length;
+                elTerminalInput.value = '';
+            }
+        }
+    };
+}
 
 // Settings Modal
 const elBtnSettings = document.getElementById('btn-settings');

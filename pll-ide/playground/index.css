@@ -406,5 +406,43 @@ select option { background-color: var(--bg-secondary) !important; color: var(--t
 .terminal-panel { display: flex; flex-direction: column; height: 100%; background: var(--bg-dark); }
 .terminal-output { flex: 1; font-family: var(--font-mono); font-size: 11px; line-height: 1.5; overflow-y: auto; }
 .terminal-input-bar { display: flex; align-items: center; gap: 6px; background: var(--bg-secondary); border-top: 1px solid var(--border-color); padding: 8px 12px; }
-.terminal-prompt { color: var(--accent); font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+.terminal-prompt { color: var(--accent-color); font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
 .terminal-input-bar input { flex: 1; background: transparent; border: none; outline: none; color: var(--text-primary); font-size: 11px; font-family: var(--font-mono); }
+
+/* Interactive Canvas Active States */
+.ctrl-btn.active {
+    background: var(--accent-color) !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+}
+
+.results-pane.expanded-fullscreen {
+    transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.suggest-chip {
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.suggest-chip:hover {
+    background: var(--accent-color);
+    color: #ffffff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.action-btn {
+    transition: transform 0.15s ease, color 0.15s ease;
+    cursor: pointer;
+}
+
+.action-btn:hover {
+    transform: scale(1.15);
+    color: var(--accent-color);
+}
+
+.variables-table th, .variables-table td {
+    padding: 8px 10px;
+    font-size: 12px;
+}
