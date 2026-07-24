@@ -331,7 +331,7 @@ fn parse_message_response(choice_message: &serde_json::Value) -> String {
 
         let model_name = std::env::var("DEEPSEEK_MODEL")
             .or_else(|_| std::env::var("DP_MODEL"))
-            .unwrap_or_else(|_| "deepseek-v4-pro".to_string());
+            .unwrap_or_else(|_| "deepseek-v4-flash".to_string());
 
         let body = json!({
             "model": model_name,
