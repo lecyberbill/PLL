@@ -329,8 +329,12 @@ fn parse_message_response(choice_message: &serde_json::Value) -> String {
             api_messages.push(json!({"role": m.role, "content": m.content}));
         }
 
+        let model_name = std::env::var("DEEPSEEK_MODEL")
+            .or_else(|_| std::env::var("DP_MODEL"))
+            .unwrap_or_else(|_| "deepseek-v4-pro".to_string());
+
         let body = json!({
-            "model": "deepseek-chat",
+            "model": model_name,
             "messages": api_messages,
             "tools": get_openai_tools_definition(),
             "temperature": temp,
