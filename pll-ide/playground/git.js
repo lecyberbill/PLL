@@ -111,20 +111,41 @@ export async function refreshGitStatus() {
 }
 
 export function showGitDiffModal(show) {
-    const modal = document.getElementById('git-diff-modal');
+    const modal = document.getElementById('diff-modal') || document.getElementById('git-diff-modal');
     if (modal) {
         if (show) modal.classList.add('open');
         else modal.classList.remove('open');
     }
 }
 
-window.openAgentDiffReview = function(path) {
+window.openAgentDiffReview = async function(path) {
     showGitDiffModal(true);
-    setTimeout(() => {
-        const dropdown = document.getElementById('diff-files-dropdown');
-        if (dropdown) {
-            dropdown.value = path;
-            dropdown.dispatchEvent(new Event('change'));
+    if (path) {
+        try {
+            const elDropdown = document.getElementById('diff-files-dropdown');
+            if (elDropdown) {
+                elDropdown.style.display = 'block';
+                let found = false;
+                for (let i = 0; i < elDropdown.options.length; i++) {
+                    if (elDropdown.options[i].value === path) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    const opt = document.createElement('option');
+                    opt.value = path;
+                    opt.textContent = path;
+                    elDropdown.appendChild(opt);
+                }
+                elDropdown.value = path;
+            }
+            const diffContent = document.getElementById('diff-content');
+            if (diffContent) {
+                diffContent.textContent = `Affichage des modifications pour ${path}...\n(Utilisez le bouton Commit pour valider ou l'éditeur pour corriger)`;
+            }
+        } catch (e) {
+            console.error("Error showing diff for file:", e);
         }
-    }, 150);
+    }
 };

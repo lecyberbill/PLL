@@ -615,6 +615,12 @@ if (elBtnSettingsClose) {
     };
 }
 
+const elDiffBtnClose = document.getElementById('diff-btn-close');
+const elDiffModal = document.getElementById('diff-modal');
+if (elDiffBtnClose && elDiffModal) {
+    elDiffBtnClose.onclick = () => elDiffModal.classList.remove('open');
+}
+
 // Agent interaction bindings
 if (elAgenticSend) elAgenticSend.onclick = sendAgenticMessage;
 if (elAgenticInput) {
