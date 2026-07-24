@@ -317,10 +317,127 @@ fn parse_message_response(choice_message: &serde_json::Value) -> String {
 }
 
     let selected_backend = backend.clone().unwrap_or_else(|| "deepseek-v4-flash".to_string());
-    let is_deepseek = selected_backend.starts_with("deepseek");
-
     let client = Client::new();
-    let response_text = if is_deepseek {
+
+    let response_text = if selected_backend.starts_with("gemini") {
+        let api_key = std::env::var("GEMINI_API_KEY")
+            .or_else(|_| std::env::var("GOOGLE_API_KEY"))
+            .or_else(|_| std::env::var("Gemini_API_KEY"))
+            .map_err(|_| "Clé API Gemini manquante. Veuillez définir GEMINI_API_KEY dans vos paramètres ou variables d'environnement.".to_string())?;
+
+        let model_name = match selected_backend.as_str() {
+            "gemini-3.5-flash" => "gemini-2.5-flash",
+            "gemini-3.1-pro" => "gemini-2.5-pro",
+            "gemini-3.1-flash-lite" => "gemini-1.5-flash",
+            "gemini-3-flash" => "gemini-1.5-flash",
+            "gemini-1.5-pro" => "gemini-1.5-pro",
+            _ => "gemini-1.5-flash"
+        };
+
+        let mut api_messages = vec![json!({"role": "system", "content": sys_prompt})];
+        for m in &messages {
+            api_messages.push(json!({"role": m.role, "content": m.content}));
+        }
+
+        let body = json!({
+            "model": model_name,
+            "messages": api_messages,
+            "tools": get_openai_tools_definition(),
+            "temperature": temp,
+            "max_tokens": tokens,
+            "stream": false
+        });
+
+        let resp = client.post("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Gemini API call failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            let err_text = resp.text().await.unwrap_or_default();
+            return Err(format!("Gemini API Error: {}", err_text));
+        }
+
+        let json_resp: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        parse_message_response(&json_resp["choices"][0]["message"])
+
+    } else if selected_backend.starts_with("claude") || selected_backend.starts_with("anthropic") {
+        let api_key = std::env::var("ANTHROPIC_API_KEY")
+            .or_else(|_| std::env::var("CLAUDE_API_KEY"))
+            .map_err(|_| "Clé API Anthropic manquante. Veuillez définir ANTHROPIC_API_KEY dans vos paramètres.".to_string())?;
+
+        let model_name = if selected_backend.contains("sonnet") {
+            "claude-3-5-sonnet-20241022"
+        } else {
+            "claude-3-haiku-20240307"
+        };
+
+        let anthropic_messages: Vec<serde_json::Value> = messages.iter().map(|m| {
+            json!({ "role": m.role, "content": m.content })
+        }).collect();
+
+        let body = json!({
+            "model": model_name,
+            "system": sys_prompt,
+            "messages": anthropic_messages,
+            "max_tokens": tokens,
+            "temperature": temp
+        });
+
+        let resp = client.post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", api_key)
+            .header("anthropic-version", "2023-06-01")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Anthropic API call failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            let err_text = resp.text().await.unwrap_or_default();
+            return Err(format!("Anthropic API Error: {}", err_text));
+        }
+
+        let json_resp: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        json_resp["content"][0]["text"].as_str().unwrap_or("").to_string()
+
+    } else if selected_backend.starts_with("gpt") || selected_backend.starts_with("openai") {
+        let api_key = std::env::var("OPENAI_API_KEY")
+            .map_err(|_| "Clé API OpenAI manquante. Veuillez définir OPENAI_API_KEY.".to_string())?;
+
+        let model_name = if selected_backend.contains("mini") { "gpt-4o-mini" } else { "gpt-4o" };
+
+        let mut api_messages = vec![json!({"role": "system", "content": sys_prompt})];
+        for m in &messages {
+            api_messages.push(json!({"role": m.role, "content": m.content}));
+        }
+
+        let body = json!({
+            "model": model_name,
+            "messages": api_messages,
+            "tools": get_openai_tools_definition(),
+            "temperature": temp,
+            "max_tokens": tokens,
+            "stream": false
+        });
+
+        let resp = client.post("https://api.openai.com/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("OpenAI call failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            let err_text = resp.text().await.unwrap_or_default();
+            return Err(format!("OpenAI API Error: {}", err_text));
+        }
+
+        let json_resp: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        parse_message_response(&json_resp["choices"][0]["message"])
+
+    } else if selected_backend.starts_with("deepseek") {
         let api_key = std::env::var("DP_API_KEY")
             .or_else(|_| std::env::var("DEEPSEEK_API_KEY"))
             .or_else(|_| std::env::var("Dp_API_KEY"))

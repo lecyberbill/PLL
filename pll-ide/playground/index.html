@@ -20,8 +20,16 @@
                         <option value="">-- Projet local --</option>
                     </select>
                     <select id="model-select" class="project-select" title="Modèle d'Agent IA" style="background: rgba(99, 102, 241, 0.15); border: 1px solid var(--accent-color); color: #fff; font-weight: bold;">
-                        <option value="deepseek-v4-flash">⚡ DeepSeek v4 Flash (Rapide / Éco)</option>
-                        <option value="deepseek-v4-pro">🚀 DeepSeek v4 Pro (Raisonnant)</option>
+                        <option value="gemini-3.5-flash">✨ Gemini 3.5 Flash (Rapide & Puissant)</option>
+                        <option value="gemini-3.1-pro">✨ Gemini 3.1 Pro (Raisonnant Multimodal)</option>
+                        <option value="gemini-3.1-flash-lite">✨ Gemini 3.1 Flash-Lite (Économique)</option>
+                        <option value="gemini-3-flash">✨ Gemini 3 Flash</option>
+                        <option value="claude-3-5-sonnet">🧠 Claude 3.5 Sonnet</option>
+                        <option value="claude-3-haiku">⚡ Claude 3 Haiku</option>
+                        <option value="deepseek-v4-flash">⚡ DeepSeek v4 Flash</option>
+                        <option value="deepseek-v4-pro">🚀 DeepSeek v4 Pro</option>
+                        <option value="gpt-4o">🟢 OpenAI GPT-4o</option>
+                        <option value="gpt-4o-mini">🟢 OpenAI GPT-4o Mini</option>
                         <option value="lmstudio">💻 LM Studio / Local Ollama</option>
                     </select>
                     <button id="btn-settings" class="btn btn-sm btn-secondary" title="Paramètres">⚙️ Paramètres</button>
@@ -390,6 +398,58 @@
             <div class="drawer-section">
                 <label>Sortie</label>
                 <div id="drawer-result"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings & API Preferences Modal -->
+    <div class="modal" id="settings-modal">
+        <div class="modal-content" style="max-width: 550px; width: 90vw;">
+            <h2>⚙️ Préférences & Clés d'API LLM</h2>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
+                Configurez vos clés d'accès aux modèles d'IA. Les valeurs saisies ci-dessous sont enregistrées localement dans votre environnement.
+            </p>
+            
+            <div class="form-group" style="margin-top: 12px;">
+                <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; display: flex; justify-content: space-between;">
+                    <span>✨ Google Gemini API Key</span>
+                    <small style="color: #10b981;">(GEMINI_API_KEY)</small>
+                </label>
+                <input type="password" id="pref-gemini-key" placeholder="AIzaSy..." style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); padding: 8px; border-radius: var(--radius-sm); color: var(--text-primary); margin-top: 4px; font-size: 12px; outline: none; font-family: var(--font-mono);">
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+                <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; display: flex; justify-content: space-between;">
+                    <span>⚡ DeepSeek API Key</span>
+                    <small style="color: #10b981;">(DEEPSEEK_API_KEY / DP_API_KEY)</small>
+                </label>
+                <input type="password" id="pref-deepseek-key" placeholder="sk-..." style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); padding: 8px; border-radius: var(--radius-sm); color: var(--text-primary); margin-top: 4px; font-size: 12px; outline: none; font-family: var(--font-mono);">
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+                <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; display: flex; justify-content: space-between;">
+                    <span>🧠 Anthropic Claude API Key</span>
+                    <small style="color: #10b981;">(ANTHROPIC_API_KEY)</small>
+                </label>
+                <input type="password" id="pref-anthropic-key" placeholder="sk-ant-..." style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); padding: 8px; border-radius: var(--radius-sm); color: var(--text-primary); margin-top: 4px; font-size: 12px; outline: none; font-family: var(--font-mono);">
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+                <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; display: flex; justify-content: space-between;">
+                    <span>🟢 OpenAI API Key</span>
+                    <small style="color: #10b981;">(OPENAI_API_KEY)</small>
+                </label>
+                <input type="password" id="pref-openai-key" placeholder="sk-proj-..." style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); padding: 8px; border-radius: var(--radius-sm); color: var(--text-primary); margin-top: 4px; font-size: 12px; outline: none; font-family: var(--font-mono);">
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+                <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">💻 Local LM Studio / Ollama URL</label>
+                <input type="text" id="pref-lmstudio-url" placeholder="http://localhost:1234/v1/chat/completions" style="width: 100%; background: var(--bg-dark); border: 1px solid var(--border-color); padding: 8px; border-radius: var(--radius-sm); color: var(--text-primary); margin-top: 4px; font-size: 12px; outline: none; font-family: var(--font-mono);">
+            </div>
+
+            <div class="modal-actions" style="margin-top: 16px;">
+                <button id="settings-modal-cancel" class="btn btn-secondary">Annuler</button>
+                <button id="settings-modal-save" class="btn btn-primary">Enregistrer les Préférences</button>
             </div>
         </div>
     </div>

@@ -331,6 +331,44 @@ if (elProjectModalCancel) {
     elProjectModalCancel.onclick = () => elProjectModal.classList.remove('open');
 }
 
+// Settings & API preferences modal
+const btnSettings = document.getElementById('btn-settings');
+const modalSettings = document.getElementById('settings-modal');
+const btnSettingsCancel = document.getElementById('settings-modal-cancel');
+const btnSettingsSave = document.getElementById('settings-modal-save');
+
+if (btnSettings && modalSettings) {
+    btnSettings.onclick = () => {
+        document.getElementById('pref-gemini-key').value = localStorage.getItem('pll_gemini_key') || '';
+        document.getElementById('pref-deepseek-key').value = localStorage.getItem('pll_deepseek_key') || '';
+        document.getElementById('pref-anthropic-key').value = localStorage.getItem('pll_anthropic_key') || '';
+        document.getElementById('pref-openai-key').value = localStorage.getItem('pll_openai_key') || '';
+        document.getElementById('pref-lmstudio-url').value = localStorage.getItem('pll_lmstudio_url') || 'http://localhost:1234/v1/chat/completions';
+        modalSettings.classList.add('open');
+    };
+    if (btnSettingsCancel) {
+        btnSettingsCancel.onclick = () => modalSettings.classList.remove('open');
+    }
+    if (btnSettingsSave) {
+        btnSettingsSave.onclick = () => {
+            const gemini = document.getElementById('pref-gemini-key').value.trim();
+            const deepseek = document.getElementById('pref-deepseek-key').value.trim();
+            const anthropic = document.getElementById('pref-anthropic-key').value.trim();
+            const openai = document.getElementById('pref-openai-key').value.trim();
+            const lmstudio = document.getElementById('pref-lmstudio-url').value.trim();
+
+            if (gemini) localStorage.setItem('pll_gemini_key', gemini);
+            if (deepseek) localStorage.setItem('pll_deepseek_key', deepseek);
+            if (anthropic) localStorage.setItem('pll_anthropic_key', anthropic);
+            if (openai) localStorage.setItem('pll_openai_key', openai);
+            if (lmstudio) localStorage.setItem('pll_lmstudio_url', lmstudio);
+
+            modalSettings.classList.remove('open');
+            showToast("Préférences et clés d'API enregistrées avec succès", "success");
+        };
+    }
+}
+
 
 if (elProjectModalSave) {
     elProjectModalSave.onclick = async () => {
