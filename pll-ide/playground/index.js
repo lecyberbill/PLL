@@ -609,8 +609,43 @@ const elCommitMessageSidebar = document.getElementById('git-commit-msg-sidebar')
 if (elBtnCommitSidebar && elCommitMessageSidebar) {
     elBtnCommitSidebar.onclick = async () => {
         if (!state.currentProjectId) return;
-        const msg = elCommitMessageSidebar.value.trim();
-        if (!msg) { alert("Message de commit requis"); return; }
+        let msg = elCommitMessageSidebar.value.trim();
+        if (!msg) {
+            showToast("L'Agent IA génère le message de commit...", "info");
+            elBtnCommitSidebar.disabled = true;
+            try {
+                const st = await api(`/api/git/${state.currentProjectId}/status`);
+                const fileChanges = [];
+                if (st?.modified?.length) fileChanges.push(`Fichiers modifiés: ${st.modified.join(', ')}`);
+                if (st?.staged?.length) fileChanges.push(`Fichiers staged: ${st.staged.join(', ')}`);
+                if (st?.untracked?.length) fileChanges.push(`Fichiers ajoutés: ${st.untracked.join(', ')}`);
+                if (st?.deleted?.length) fileChanges.push(`Fichiers supprimés: ${st.deleted.join(', ')}`);
+                
+                const summary = fileChanges.join('\n') || `Modifications dans le fichier actif ${state.activeFile || 'du projet'}`;
+
+                const res = await api('/api/llm/chat', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        messages: [{
+                            role: 'user',
+                            content: `Génère un message de commit Git concis (max 70 caractères) au format Conventional Commits (ex: "feat: update layout" ou "fix: resolve node dragging") pour ces modifications :\n${summary}`
+                        }],
+                        system: "Vous êtes un expert Git. Répondez UNIQUEMENT avec la ligne unique de message de commit sans guillemets ni explications.",
+                        temperature: 0.2,
+                        no_cache: true
+                    })
+                });
+
+                msg = res.response.replace(/^["'`\s]+|["'`\s]+$/g, '').trim();
+                elCommitMessageSidebar.value = msg;
+            } catch (err) {
+                msg = `update: sync project changes (${state.activeFile || 'workspace'})`;
+                elCommitMessageSidebar.value = msg;
+            } finally {
+                elBtnCommitSidebar.disabled = false;
+            }
+        }
+
         try {
             await api(`/api/git/${state.currentProjectId}/commit`, {
                 method: 'POST',
@@ -618,6 +653,7 @@ if (elBtnCommitSidebar && elCommitMessageSidebar) {
             });
             elCommitMessageSidebar.value = '';
             logToTerminal(`Commit réussi: "${msg}"`, 'sys-msg');
+            showToast(`Commit effectué : "${msg}"`, 'success');
             await refreshGitStatus();
         } catch (e) {
             logToTerminal(`Erreur commit: ${e.message}`, 'error-msg');
