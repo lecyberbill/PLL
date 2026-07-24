@@ -172,6 +172,16 @@ export function renderTabs() {
         const tab = document.createElement('div');
         tab.className = `editor-tab-item ${path === state.activeFile ? 'active' : ''}`;
         tab.title = path;
+        
+        const badge = state.gitFileStatus ? state.gitFileStatus[path] : null;
+        if (badge) {
+            const tabBadge = document.createElement('span');
+            const badgeColor = badge === '?' ? '#10b981' : badge === 'D' ? '#ef4444' : badge === 'M' ? '#f59e0b' : '#6366f1';
+            tabBadge.textContent = badge;
+            tabBadge.style.cssText = `font-size: 9px; font-weight: bold; color: ${badgeColor}; margin-right: 4px; font-family: var(--font-mono);`;
+            tab.appendChild(tabBadge);
+        }
+
         const name = document.createElement('span');
         name.textContent = path.split('/').pop() || path;
         name.style.cssText = 'overflow:hidden;text-overflow:ellipsis;max-width:120px';
@@ -271,18 +281,13 @@ function renderTree(container, tree, depth, expanded = new Set(), parentPath = '
             if (badge) {
                 badgeText = badge;
                 statusClass = badge === '?' ? 'untracked' : badge === 'D' ? 'deleted' : badge === 'M' ? 'modified' : 'staged';
-                tooltipText = badge === '?' ? 'Non suivi' : badge === 'D' ? 'Supprimé' : badge === 'M' ? 'Modifié' : 'Indexé';
-                textColor = badge === '?' ? '#2dd4bf' : badge === 'D' ? '#f87171' : badge === 'M' ? '#eab308' : '#22c55e';
+                tooltipText = badge === '?' ? 'Nouveau / Non suivi' : badge === 'D' ? 'Supprimé' : badge === 'M' ? 'Modifié dans Git' : 'Indexé';
+                textColor = badge === '?' ? '#10b981' : badge === 'D' ? '#ef4444' : badge === 'M' ? '#f59e0b' : '#6366f1';
             } else if (state.gitAheadFiles.includes(node.path)) {
                 badgeText = '↑';
                 statusClass = 'ahead';
                 tooltipText = 'En attente de push';
                 textColor = '#60a5fa';
-            } else if (state.currentProjectId) {
-                badgeText = '✓';
-                statusClass = 'synced';
-                tooltipText = 'Synchronisé';
-                textColor = '#a5b4fc';
             }
             
             if (statusClass) {
@@ -290,8 +295,8 @@ function renderTree(container, tree, depth, expanded = new Set(), parentPath = '
                 badgeEl.className = `vfs-git-badge ${statusClass}`;
                 badgeEl.textContent = badgeText;
                 badgeEl.title = tooltipText;
-                badgeEl.style.marginRight = '6px';
-                name.appendChild(badgeEl);
+                badgeEl.style.cssText = `margin-right: 6px; font-weight: bold; color: ${textColor}; font-size: 10px; font-family: var(--font-mono);`;
+                item.appendChild(badgeEl);
             }
 
             const textNode = document.createElement('span');
