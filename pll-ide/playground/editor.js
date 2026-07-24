@@ -108,17 +108,23 @@ export function openInlineAiBar() {
     closeBtn.onclick = () => bar.style.display = 'none';
 }
 
+const LANG_MAP = {
+    'py': 'python', 'js': 'javascript', 'ts': 'typescript', 'jsx': 'javascript',
+    'tsx': 'typescript', 'rs': 'rust', 'go': 'go', 'java': 'java',
+    'cpp': 'cpp', 'c': 'c', 'h': 'c', 'hpp': 'cpp', 'rb': 'ruby',
+    'php': 'php', 'swift': 'swift', 'kt': 'kotlin', 'scala': 'scala',
+    'pll': 'pll', 'html': 'html', 'css': 'css', 'scss': 'scss',
+    'json': 'json', 'xml': 'xml', 'yaml': 'yaml', 'yml': 'yaml',
+    'md': 'markdown', 'sql': 'sql', 'sh': 'shell', 'bash': 'shell',
+    'r': 'r', 'lua': 'lua', 'dart': 'dart', 'ex': 'elixir',
+    'hs': 'haskell', 'clj': 'clojure', 'zig': 'zig', 'sol': 'solidity',
+    'toml': 'toml', 'bat': 'bat', 'cmd': 'bat', 'wgsl': 'wgsl'
+};
+
 export function detectLanguage(path) {
+    if (!path) return 'plaintext';
     const ext = path.split('.').pop().toLowerCase();
-    if (ext === 'py') return 'python';
-    if (ext === 'pll') return 'pll';
-    if (ext === 'js') return 'javascript';
-    if (ext === 'ts') return 'typescript';
-    if (ext === 'json') return 'json';
-    if (ext === 'md') return 'markdown';
-    if (ext === 'css') return 'css';
-    if (ext === 'html') return 'html';
-    return 'plaintext';
+    return LANG_MAP[ext] || 'plaintext';
 }
 
 export function clearEditor() {
