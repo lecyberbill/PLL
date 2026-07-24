@@ -495,8 +495,9 @@ export async function runReActLoopClient(userMessage, backend, placeholder) {
             });
         } catch (err) {
             clearInterval(thinkingTimer);
-            placeholder.remove();
-            addAgenticMessage('assistant', `❌ Erreur d'appel LLM: ${err.message}`);
+            if (placeholder) placeholder.remove();
+            const errMsg = typeof err === 'object' && err !== null ? (err.message || JSON.stringify(err)) : String(err);
+            addAgenticMessage('assistant', `❌ Erreur d'appel LLM: ${errMsg}`);
             return;
         }
 

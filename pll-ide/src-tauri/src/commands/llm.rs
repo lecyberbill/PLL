@@ -319,8 +319,10 @@ fn parse_message_response(choice_message: &serde_json::Value) -> String {
     let client = Client::new();
     let response_text = if selected_backend == "deepseek" {
         let api_key = std::env::var("DP_API_KEY")
+            .or_else(|_| std::env::var("DEEPSEEK_API_KEY"))
             .or_else(|_| std::env::var("Dp_API_KEY"))
-            .map_err(|_| "DeepSeek API key is missing (DP_API_KEY env var)".to_string())?;
+            .or_else(|_| std::env::var("DeepSeek_API_KEY"))
+            .map_err(|_| "Clé API DeepSeek manquante. Veuillez définir DP_API_KEY ou DEEPSEEK_API_KEY dans votre environnement.".to_string())?;
         
         let mut api_messages = vec![json!({"role": "system", "content": sys_prompt})];
         for m in &messages {
