@@ -732,6 +732,12 @@ export function parseErrorLocations(output) {
 
 export async function executeToolJS(tool, args) {
     if (tool === 'write_file') {
+        let oldContent = "";
+        try {
+            const oldRes = await api(`/api/projects/${state.currentProjectId}/files/${encodeURIComponent(args.path)}`);
+            if (oldRes && oldRes.content !== undefined) oldContent = oldRes.content;
+        } catch (e) {}
+
         await api(`/api/projects/${state.currentProjectId}/files`, {
             method: 'POST',
             body: JSON.stringify({ path: args.path, content: args.content })
@@ -740,6 +746,32 @@ export async function executeToolJS(tool, args) {
             state.filesList.push(args.path);
         }
         renderVfsList();
+
+        const newContent = args.content || "";
+        const oldLines = oldContent ? oldContent.split('\n').length : 0;
+        const newLines = newContent.split('\n').length;
+        const diffAdd = Math.max(0, newLines - oldLines) || (oldContent ? 1 : newLines);
+        const diffDel = oldContent ? Math.max(0, oldLines - newLines) : 0;
+
+        const pathParts = args.path.split('/');
+        const fileName = pathParts.pop();
+        const dirPath = pathParts.join('/') || '.';
+
+        const cardHtml = `
+            <div class="agent-diff-card" onclick="window.openAgentDiffReview('${escHtml(args.path)}')">
+                <div class="diff-card-header">
+                    <span>1 file changed <span class="diff-add">+${diffAdd}</span> <span class="diff-del">-${diffDel}</span></span>
+                    <button class="btn-review" onclick="event.stopPropagation(); window.openAgentDiffReview('${escHtml(args.path)}')">📄 Review</button>
+                </div>
+                <div class="diff-card-body">
+                    <span style="color:var(--accent-color); font-weight:bold;">&lt;/&gt;</span>
+                    <strong>${escHtml(fileName)}</strong>
+                    <small>/${escHtml(dirPath)}</small>
+                </div>
+            </div>
+        `;
+        addAgenticMessage('system', cardHtml);
+
         return `File ${args.path} written successfully.`;
     }
     if (tool === 'read_file') {

@@ -448,6 +448,57 @@ select option { background-color: var(--bg-secondary) !important; color: var(--t
     cursor: pointer;
 }
 
+/* Agent File Modification Diff Card */
+.agent-diff-card {
+    background: rgba(22, 22, 34, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 8px 0;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.agent-diff-card:hover {
+    background: rgba(30, 30, 48, 0.95);
+    border-color: var(--accent-color);
+}
+.diff-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    margin-bottom: 6px;
+    color: var(--text-muted);
+}
+.diff-add { color: #10b981; font-weight: bold; }
+.diff-del { color: #ef4444; font-weight: bold; }
+.diff-card-body {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-primary);
+}
+.diff-card-body small {
+    color: var(--text-muted);
+    font-size: 10px;
+}
+.btn-review {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.btn-review:hover {
+    background: var(--accent-color);
+    color: #fff;
+}
+
 .action-btn:hover {
     transform: scale(1.15);
     color: var(--accent-color);

@@ -117,3 +117,14 @@ export function showGitDiffModal(show) {
         else modal.classList.remove('open');
     }
 }
+
+window.openAgentDiffReview = function(path) {
+    showGitDiffModal(true);
+    setTimeout(() => {
+        const dropdown = document.getElementById('diff-files-dropdown');
+        if (dropdown) {
+            dropdown.value = path;
+            dropdown.dispatchEvent(new Event('change'));
+        }
+    }, 150);
+};
