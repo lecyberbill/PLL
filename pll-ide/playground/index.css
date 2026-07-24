@@ -24,6 +24,17 @@ body {
     overflow: hidden;
 }
 
+@keyframes pulseGlow {
+    0% { box-shadow: 0 0 4px #10b981, 0 0 8px #10b981; transform: scale(1); }
+    50% { box-shadow: 0 0 16px #6366f1, 0 0 28px #6366f1; transform: scale(1.4); }
+    100% { box-shadow: 0 0 4px #10b981, 0 0 8px #10b981; transform: scale(1); }
+}
+
+.node-indicator.glowing {
+    animation: pulseGlow 1.2s infinite ease-in-out;
+    background: #6366f1 !important;
+}
+
 .glass-bg {
     position: fixed; inset: 0; z-index: -1;
     background: radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 60%),

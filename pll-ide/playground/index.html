@@ -49,6 +49,7 @@
                 <div class="pane-header" style="padding: 4px 8px;">
                     <div class="sidebar-tabs" style="display: flex; gap: 8px;">
                         <button class="sidebar-tab-btn active" id="tab-btn-vfs" style="background: none; border: none; color: var(--text-primary); cursor: pointer; font-size: 13px; font-weight: bold; border-bottom: 2px solid var(--accent-color); padding: 4px 0;">📂 Fichiers</button>
+                        <button class="sidebar-tab-btn" id="tab-btn-search" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; font-weight: bold; padding: 4px 0;">🔍 Recherche</button>
                         <button class="sidebar-tab-btn" id="tab-btn-sessions" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; font-weight: bold; padding: 4px 0;">🕒 Sessions</button>
                         <button class="sidebar-tab-btn" id="tab-btn-packages" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; font-weight: bold; padding: 4px 0;">📦 Paquets</button>
                     </div>
@@ -76,8 +77,15 @@
                             <div class="git-commit-bar-sidebar" style="display: flex; flex-direction: column; gap: 6px; margin-top: auto;">
                                 <input type="text" id="git-commit-msg-sidebar" placeholder="Message de commit (Agent si vide)..." style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); padding: 6px 8px; border-radius: var(--radius-sm); color: var(--text-primary); font-size: 11px; outline: none; width: 100%;">
                                 <button id="git-btn-commit-sidebar" class="btn btn-sm btn-primary" style="width: 100%; font-size: 11px; padding: 6px;">💾 Commit</button>
-                            </div>
-                        </div>
+                    </div>
+                </div>
+                <div class="search-manager sidebar-content-item" id="sidebar-content-search" style="flex: 1; display: none; flex-direction: column; overflow: hidden; padding: 8px;">
+                    <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+                        <input type="text" id="global-search-input" placeholder="Rechercher dans le projet (Ctrl+Shift+F)..." style="flex: 1; background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); padding: 6px 8px; border-radius: var(--radius-sm); color: var(--text-primary); font-size: 11px; outline: none;">
+                        <button id="global-search-btn" class="btn btn-sm btn-primary" style="padding: 4px 8px; font-size: 11px;">🔍</button>
+                    </div>
+                    <div id="global-search-results" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;">
+                        <div class="sys-msg" style="font-size: 11px; color: var(--text-muted); padding: 8px;">Entrez une expression pour rechercher dans tous les fichiers.</div>
                     </div>
                 </div>
                 <div class="sessions-manager sidebar-content-item" id="sidebar-content-sessions" style="flex: 1; display: none; flex-direction: column; overflow: hidden; padding: 8px;">

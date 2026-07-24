@@ -1,12 +1,13 @@
 import { state } from './state.js';
 import { api } from './api.js';
-import { escHtml, logToTerminal, logToExecutionLogs, switchTab, switchSidebarTab, initResizeHandles, initCanvasControls, initSidebarAccordions, togglePanelFullscreen, showToast } from './ui.js';
+import { escHtml, logToTerminal, logToExecutionLogs, switchTab, switchSidebarTab, initResizeHandles, initCanvasControls, initSidebarAccordions, togglePanelFullscreen, showToast, performGlobalSearch } from './ui.js';
 import { loadMonaco, detectLanguage } from './editor-setup.js';
 import { set_virtual_file, get_virtual_file } from './pkg/pll_wasm.js';
 import {
     getEditorContent,
     setEditorContent,
     setEditorLanguage,
+    initInlineAiEdit,
     clearEditor,
     clearDefaults,
     closeFile,
@@ -136,6 +137,7 @@ async function main() {
             state.editor.onDidChangeModelContent(() => {
                 if (state.activeFile) set_virtual_file(state.activeFile, state.editor.getValue());
             });
+            initInlineAiEdit();
         }
     } catch (e) {
         console.error("Monaco Editor failed to load:", e);
@@ -178,6 +180,50 @@ export function updateVariablesInspector() {
     const activeFile = state.activeFile || 'Aucun';
     const backend = localStorage.getItem('pll-backend') || 'DeepSeek (Native Tool Calling)';
     
+    const code = getEditorContent();
+    let astHtml = '';
+    if (code && (activeFile.endsWith('.pll') || code.includes('pipeline') || code.includes('rule'))) {
+        // Parse AST rules & confidence meters
+        const ruleMatches = [...code.matchAll(/rule\s+([a-zA-Z0-9_]+)\s*\{[\s\S]*?\?\("([^"]+)"\)/g)];
+        const nodeMatches = [...code.matchAll(/node\s+([a-zA-Z0-9_]+)\s*:\s*([a-zA-Z0-9_]+)/g)];
+        const pipelineMatch = code.match(/pipeline\s+([a-zA-Z0-9_]+)/);
+
+        astHtml = `
+            <div style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+                <h4 style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: var(--accent-color); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                    <span>🧠</span> AST & Mesures de Confiance Probabilistes PLL
+                </h4>
+                ${pipelineMatch ? `<div style="font-size: 11px; margin-bottom: 6px;"><strong>Pipeline:</strong> <span style="color:#6366f1;">${pipelineMatch[1]}</span></div>` : ''}
+                
+                <div style="font-size: 10px; font-weight: bold; color: var(--text-muted); margin-bottom: 4px;">NŒUDS DÉCLARÉS (${nodeMatches.length}) :</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px;">
+                    ${nodeMatches.map(m => `<span style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 4px; padding: 2px 6px; font-size: 10px; color: var(--text-primary); font-family: var(--font-mono);">${m[1]} <small style="color:var(--text-muted)">(${m[2]})</small></span>`).join('') || '<span style="font-size:10px; color:var(--text-muted)">Aucun nœud</span>'}
+                </div>
+
+                <div style="font-size: 10px; font-weight: bold; color: var(--text-muted); margin-bottom: 4px;">RÈGLES PROBABILISTES (${ruleMatches.length}) :</div>
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    ${ruleMatches.map(m => {
+                        const ruleName = m[1];
+                        const cond = m[2];
+                        const valMatch = cond.match(/0\.\d+/);
+                        const pct = valMatch ? Math.round(parseFloat(valMatch[0]) * 100) : 95;
+                        return `
+                            <div style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); padding: 6px; border-radius: 4px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: bold; margin-bottom: 4px;">
+                                    <span>${ruleName}</span>
+                                    <span style="color: #10b981;">?("${cond}") → ${pct}%</span>
+                                </div>
+                                <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
+                                    <div style="width: ${pct}%; height: 100%; background: linear-gradient(90deg, #6366f1, #10b981); box-shadow: 0 0 8px #10b981;"></div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('') || '<div style="font-size:10px; color:var(--text-muted)">Aucune règle probabiliste détectée.</div>'}
+                </div>
+            </div>
+        `;
+    }
+
     elVars.innerHTML = `
         <table class="variables-table" style="width:100%; border-collapse:collapse; font-size:12px;">
             <thead>
@@ -215,6 +261,7 @@ export function updateVariablesInspector() {
                 </tr>
             </tbody>
         </table>
+        ${astHtml}
     `;
 }
 
@@ -240,6 +287,31 @@ if (elProjectSelect) {
         updateVariablesInspector();
     };
 }
+
+// Global search binding
+const btnSearchTab = document.getElementById('tab-btn-search');
+const btnGlobalSearch = document.getElementById('global-search-btn');
+const inputGlobalSearch = document.getElementById('global-search-input');
+
+if (btnSearchTab) {
+    btnSearchTab.onclick = () => switchSidebarTab('tab-btn-search', 'sidebar-content-search');
+}
+if (btnGlobalSearch) {
+    btnGlobalSearch.onclick = performGlobalSearch;
+}
+if (inputGlobalSearch) {
+    inputGlobalSearch.onkeydown = (e) => {
+        if (e.key === 'Enter') performGlobalSearch();
+    };
+}
+
+document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.keyCode === 70) { // Ctrl+Shift+F
+        e.preventDefault();
+        switchSidebarTab('tab-btn-search', 'sidebar-content-search');
+        document.getElementById('global-search-input')?.focus();
+    }
+});
 
 if (elBtnNewProject) {
     elBtnNewProject.onclick = () => {

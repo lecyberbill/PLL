@@ -16,6 +16,98 @@ export function setEditorLanguage(lang) {
     if (elLangBadge) elLangBadge.textContent = lang || 'plaintext';
 }
 
+export function initInlineAiEdit() {
+    if (!state.editor) return;
+    const editor = state.editor;
+
+    editor.onKeyDown((e) => {
+        if ((e.ctrlKey || e.metaKey) && e.keyCode === state.monaco.KeyCode.KeyK) {
+            e.preventDefault();
+            e.stopPropagation();
+            openInlineAiBar();
+        }
+    });
+}
+
+export function openInlineAiBar() {
+    if (!state.editor) return;
+    const editor = state.editor;
+    const selection = editor.getSelection();
+    const selectedText = editor.getModel().getValueInRange(selection);
+
+    let bar = document.getElementById('inline-ai-bar');
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'inline-ai-bar';
+        bar.style.cssText = `position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5000; background: rgba(18, 18, 26, 0.95); border: 1px solid var(--accent-color); padding: 8px 12px; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); backdrop-filter: blur(12px); display: flex; align-items: center; gap: 8px; width: 80%; max-width: 600px;`;
+        document.querySelector('.editor-container')?.appendChild(bar);
+    }
+    bar.style.display = 'flex';
+    bar.innerHTML = `
+        <span style="font-size: 14px;">⚡</span>
+        <input type="text" id="inline-ai-prompt" placeholder="Consigne d'édition IA (Ctrl+K) : Ex: Ajouter la gestion des erreurs..." style="flex:1; background: transparent; border: none; outline: none; color: var(--text-primary); font-size: 12px; font-family: var(--font-mono);">
+        <button id="inline-ai-submit" class="btn btn-sm btn-primary" style="padding: 4px 10px; font-size: 11px;">Exécuter</button>
+        <button id="inline-ai-close" class="btn btn-sm btn-secondary" style="padding: 4px 8px; font-size: 11px;">✕</button>
+    `;
+
+    const input = bar.querySelector('#inline-ai-prompt');
+    const submitBtn = bar.querySelector('#inline-ai-submit');
+    const closeBtn = bar.querySelector('#inline-ai-close');
+
+    input.focus();
+
+    const doSubmit = async () => {
+        const prompt = input.value.trim();
+        if (!prompt) return;
+        submitBtn.disabled = true;
+        submitBtn.textContent = "IA en cours...";
+
+        try {
+            const contextText = selectedText || editor.getValue();
+            const res = await api('/api/llm/chat', {
+                method: 'POST',
+                body: JSON.stringify({
+                    messages: [{ role: 'user', content: `Voici le code actuel :\n\`\`\`\n${contextText}\n\`\`\`\nConsigne d'édition : ${prompt}\nRenvoie UNIQUEMENT le code modifié sans explication ni balises markdown.` }],
+                    system: "Vous êtes un assistant de refactorisation de code. Répondez uniquement avec le code final modifié.",
+                    temperature: 0.1,
+                    no_cache: true
+                })
+            });
+
+            const newCode = res.response.replace(/^```\w*\n?/, '').replace(/\n?```$/, '').trim();
+            
+            // Show accept/reject controls
+            bar.innerHTML = `
+                <span style="font-size: 11px; color: #10b981; font-weight: bold;">✓ Prévisualisation prête</span>
+                <button id="inline-ai-accept" class="btn btn-sm btn-primary" style="background:#059669; padding: 4px 10px; font-size: 11px;">✓ Accepter</button>
+                <button id="inline-ai-reject" class="btn btn-sm btn-danger" style="padding: 4px 8px; font-size: 11px;">✕ Rejeter</button>
+            `;
+
+            bar.querySelector('#inline-ai-accept').onclick = () => {
+                if (selectedText && !selection.isEmpty()) {
+                    editor.executeEdits('inline-ai', [{ range: selection, text: newCode }]);
+                } else {
+                    editor.setValue(newCode);
+                }
+                bar.style.display = 'none';
+            };
+            bar.querySelector('#inline-ai-reject').onclick = () => {
+                bar.style.display = 'none';
+            };
+        } catch (err) {
+            alert("Erreur édition IA: " + err.message);
+            bar.style.display = 'none';
+        }
+    };
+
+    submitBtn.onclick = doSubmit;
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') doSubmit();
+        if (e.key === 'Escape') bar.style.display = 'none';
+    };
+    closeBtn.onclick = () => bar.style.display = 'none';
+}
+
 export function detectLanguage(path) {
     const ext = path.split('.').pop().toLowerCase();
     if (ext === 'py') return 'python';

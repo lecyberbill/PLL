@@ -260,7 +260,32 @@ export function initCanvasControls() {
 
     canvas.querySelectorAll('.flow-node').forEach(node => makeNodeDraggable(node));
 
+    // Interactive cable wiring logic
+    let isWiring = false;
+    let wiringFromNodeId = null;
+    let tempWirePath = null;
+
     canvas.addEventListener('mousedown', (e) => {
+        const portOut = e.target.closest('.port-output');
+        if (portOut) {
+            const node = portOut.closest('.flow-node');
+            if (node) {
+                isWiring = true;
+                wiringFromNodeId = node.id;
+                const svg = document.getElementById('canvas-svg');
+                if (svg) {
+                    tempWirePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    tempWirePath.setAttribute('stroke', '#10b981');
+                    tempWirePath.setAttribute('stroke-width', '2.5');
+                    tempWirePath.setAttribute('stroke-dasharray', '5 5');
+                    tempWirePath.setAttribute('fill', 'none');
+                    svg.appendChild(tempWirePath);
+                }
+                e.stopPropagation();
+                return;
+            }
+        }
+
         if (!isPanMode && e.target !== canvas && e.target.id !== 'canvas-svg') return;
         isPanning = true;
         startX = e.clientX - panX;
@@ -269,13 +294,46 @@ export function initCanvasControls() {
     });
 
     document.addEventListener('mousemove', (e) => {
+        if (isWiring && tempWirePath && wiringFromNodeId) {
+            const fromEl = document.getElementById(wiringFromNodeId);
+            if (fromEl) {
+                const fromPort = fromEl.querySelector('.port-output') || fromEl;
+                const canvasRect = canvas.getBoundingClientRect();
+                const fromRect = fromPort.getBoundingClientRect();
+                const x1 = fromRect.left + fromRect.width / 2 - canvasRect.left;
+                const y1 = fromRect.top + fromRect.height / 2 - canvasRect.top;
+                const x2 = e.clientX - canvasRect.left;
+                const y2 = e.clientY - canvasRect.top;
+                const dx = Math.max(30, Math.abs(x2 - x1) * 0.5);
+                tempWirePath.setAttribute('d', `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`);
+            }
+            return;
+        }
+
         if (!isPanning) return;
         panX = e.clientX - startX;
         panY = e.clientY - startY;
         applyTransform();
     });
 
-    document.addEventListener('mouseup', () => {
+    document.addEventListener('mouseup', (e) => {
+        if (isWiring) {
+            isWiring = false;
+            if (tempWirePath) {
+                tempWirePath.remove();
+                tempWirePath = null;
+            }
+            const portIn = e.target.closest('.port-input');
+            if (portIn) {
+                const toNode = portIn.closest('.flow-node');
+                if (toNode && wiringFromNodeId && toNode.id !== wiringFromNodeId) {
+                    connectNodes(wiringFromNodeId, toNode.id);
+                }
+            }
+            wiringFromNodeId = null;
+            return;
+        }
+
         if (isPanning) {
             isPanning = false;
             if (isPanMode) canvas.style.cursor = 'grab';
@@ -518,4 +576,64 @@ export function togglePanelFullscreen() {
         showToast('Panneau d\'agent réduit', 'info');
     }
     if (state.editor) state.editor.layout();
+}
+
+export function performGlobalSearch() {
+    const input = document.getElementById('global-search-input');
+    const resultsContainer = document.getElementById('global-search-results');
+    if (!input || !resultsContainer) return;
+    const query = input.value.trim().toLowerCase();
+    if (!query) {
+        resultsContainer.innerHTML = '<div class="sys-msg" style="font-size: 11px; color: var(--text-muted); padding: 8px;">Entrez une expression pour rechercher.</div>';
+        return;
+    }
+
+    resultsContainer.innerHTML = '<div class="sys-msg" style="font-size: 11px; color: var(--accent-color); padding: 8px;">Recherche en cours...</div>';
+
+    let matches = [];
+    const files = state.filesList || [];
+    files.forEach(file => {
+        const content = get_virtual_file(file.path) || file.content || '';
+        const lines = content.split('\n');
+        lines.forEach((line, idx) => {
+            if (line.toLowerCase().includes(query)) {
+                matches.push({ path: file.path, lineNum: idx + 1, lineContent: line.trim() });
+            }
+        });
+    });
+
+    if (matches.length === 0) {
+        resultsContainer.innerHTML = `<div class="sys-msg" style="font-size: 11px; color: var(--text-muted); padding: 8px;">Aucun résultat pour "${escHtml(query)}".</div>`;
+        return;
+    }
+
+    resultsContainer.innerHTML = '';
+    matches.forEach(m => {
+        const item = document.createElement('div');
+        item.style.cssText = 'padding: 6px 8px; background: rgba(255,255,255,0.03); border-radius: var(--radius-sm); border-left: 2px solid var(--accent-color); cursor: pointer; font-size: 11px; margin-bottom: 4px; transition: background 0.15s;';
+        item.onmouseover = () => item.style.background = 'rgba(99, 102, 241, 0.1)';
+        item.onmouseout = () => item.style.background = 'rgba(255,255,255,0.03)';
+        item.innerHTML = `
+            <div style="font-weight: bold; color: var(--accent-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escHtml(m.path)} : Ligne ${m.lineNum}</div>
+            <div style="color: var(--text-muted); font-family: var(--font-mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px;">${escHtml(m.lineContent)}</div>
+        `;
+        item.onclick = async () => {
+            if (window.loadFileToEditor) await window.loadFileToEditor(m.path);
+            if (state.editor) {
+                state.editor.revealLineInCenter(m.lineNum);
+                state.editor.setPosition({ lineNumber: m.lineNum, column: 1 });
+                state.editor.focus();
+            }
+        };
+        resultsContainer.appendChild(item);
+    });
+}
+
+export function highlightExecutingNode(nodeId, isExecuting) {
+    const el = document.getElementById(nodeId);
+    if (!el) return;
+    const indicator = el.querySelector('.node-indicator');
+    if (indicator) {
+        indicator.classList.toggle('glowing', isExecuting);
+    }
 }
