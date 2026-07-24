@@ -139,7 +139,7 @@ pub async fn chat_completion(
             "lmstudio".to_string()
         }
     });
-    let selected_backend = backend.unwrap_or(default_backend);
+    let selected_backend = backend.clone().unwrap_or(default_backend);
 
     // Check cache
     if no_cache.unwrap_or(false) == false {
@@ -316,8 +316,11 @@ fn parse_message_response(choice_message: &serde_json::Value) -> String {
     out
 }
 
+    let selected_backend = backend.clone().unwrap_or_else(|| "deepseek-v4-flash".to_string());
+    let is_deepseek = selected_backend.starts_with("deepseek");
+
     let client = Client::new();
-    let response_text = if selected_backend == "deepseek" {
+    let response_text = if is_deepseek {
         let api_key = std::env::var("DP_API_KEY")
             .or_else(|_| std::env::var("DEEPSEEK_API_KEY"))
             .or_else(|_| std::env::var("Dp_API_KEY"))
@@ -329,9 +332,15 @@ fn parse_message_response(choice_message: &serde_json::Value) -> String {
             api_messages.push(json!({"role": m.role, "content": m.content}));
         }
 
-        let model_name = std::env::var("DEEPSEEK_MODEL")
-            .or_else(|_| std::env::var("DP_MODEL"))
-            .unwrap_or_else(|_| "deepseek-v4-flash".to_string());
+        let model_name = if selected_backend == "deepseek-v4-pro" {
+            "deepseek-v4-pro".to_string()
+        } else if selected_backend == "deepseek-v4-flash" {
+            "deepseek-v4-flash".to_string()
+        } else {
+            std::env::var("DEEPSEEK_MODEL")
+                .or_else(|_| std::env::var("DP_MODEL"))
+                .unwrap_or_else(|_| "deepseek-v4-flash".to_string())
+        };
 
         let body = json!({
             "model": model_name,

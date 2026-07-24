@@ -77,7 +77,8 @@ async function sendAgenticMessage() {
         addAgenticMessage('user', msg);
         await saveConversationMessage('user', msg);
         
-        const backend = elSettingsBackend.value;
+        const elModelSelect = document.getElementById('model-select');
+        const backend = (elModelSelect ? elModelSelect.value : null) || (elSettingsBackend ? elSettingsBackend.value : 'deepseek-v4-flash');
 
         const placeholder = addAgenticMessage('system', '🤖 Agent en cours...');
         placeholder.style.opacity = '0.6';
