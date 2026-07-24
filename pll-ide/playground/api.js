@@ -50,7 +50,8 @@ export async function api(path, options = {}) {
             
             // /api/projects/{id}/files/{file_path}
             if (parts.length >= 6 && parts[4] === 'files') {
-                const filePath = parts.slice(5).join('/');
+                const rawPath = parts.slice(5).join('/');
+                const filePath = decodeURIComponent(rawPath);
                 if (options.method === 'DELETE') {
                     return await invoke('delete_project_file', { projectId, path: filePath });
                 } else {

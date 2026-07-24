@@ -115,9 +115,28 @@ pub fn list_project_files(project_id: i64) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub fn get_project_file(project_id: i64, path: String) -> Result<FileInfo, String> {
     if let Some(pdir) = get_project_disk_path(project_id)? {
-        let fpath = pdir.join(&path);
+        let mut fpath = pdir.join(&path);
         if !fpath.exists() {
-            return Err("Fichier non trouvé".to_string());
+            if let Some(parent_name) = pdir.file_name().and_then(|n| n.to_str()) {
+                let prefix = format!("{}/", parent_name);
+                let alt_prefix = format!("{}\\", parent_name);
+                if path.starts_with(&prefix) {
+                    fpath = pdir.join(&path[prefix.len()..]);
+                } else if path.starts_with(&alt_prefix) {
+                    fpath = pdir.join(&path[alt_prefix.len()..]);
+                }
+            }
+        }
+        if !fpath.exists() {
+            if let Ok(cwd) = std::env::current_dir() {
+                let alt = cwd.join(&path);
+                if alt.exists() {
+                    fpath = alt;
+                }
+            }
+        }
+        if !fpath.exists() {
+            return Err(format!("Fichier non trouvé sur le disque : {}", path));
         }
         let content = fs::read_to_string(&fpath).unwrap_or_default();
         Ok(FileInfo {
