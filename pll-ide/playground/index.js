@@ -288,14 +288,17 @@ if (elProjectSelect) {
     };
 }
 
-// Global search binding
-const btnSearchTab = document.getElementById('tab-btn-search');
+// Sidebar tabs binding
+['vfs', 'search', 'sessions', 'packages'].forEach(tabId => {
+    const btn = document.getElementById(`tab-btn-${tabId}`);
+    if (btn) {
+        btn.onclick = () => switchSidebarTab(tabId);
+    }
+});
+
 const btnGlobalSearch = document.getElementById('global-search-btn');
 const inputGlobalSearch = document.getElementById('global-search-input');
 
-if (btnSearchTab) {
-    btnSearchTab.onclick = () => switchSidebarTab('tab-btn-search', 'sidebar-content-search');
-}
 if (btnGlobalSearch) {
     btnGlobalSearch.onclick = performGlobalSearch;
 }
@@ -308,7 +311,7 @@ if (inputGlobalSearch) {
 document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.keyCode === 70) { // Ctrl+Shift+F
         e.preventDefault();
-        switchSidebarTab('tab-btn-search', 'sidebar-content-search');
+        switchSidebarTab('search');
         document.getElementById('global-search-input')?.focus();
     }
 });

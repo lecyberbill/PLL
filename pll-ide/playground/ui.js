@@ -36,8 +36,10 @@ export function switchTab(tabId) {
 }
 
 export function switchSidebarTab(tabId) {
+    const cleanId = tabId.replace(/^tab-btn-|^sidebar-content-/, '');
     document.querySelectorAll('.sidebar-tab-btn').forEach(btn => {
-        const isActive = (btn.id === `tab-btn-${tabId}`) || (btn.dataset.tab === tabId);
+        const btnClean = btn.id.replace(/^tab-btn-/, '');
+        const isActive = (btnClean === cleanId) || (btn.dataset.tab === cleanId);
         btn.classList.toggle('active', isActive);
         if (isActive) {
             btn.style.borderBottom = '2px solid var(--accent-color)';
@@ -48,7 +50,8 @@ export function switchSidebarTab(tabId) {
         }
     });
     document.querySelectorAll('.sidebar-content-item').forEach(content => {
-        const isActive = (content.id === `sidebar-content-${tabId}`);
+        const contentClean = content.id.replace(/^sidebar-content-/, '');
+        const isActive = (contentClean === cleanId);
         content.style.display = isActive ? 'flex' : 'none';
     });
 }
